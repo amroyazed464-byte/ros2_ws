@@ -28,12 +28,16 @@ class SetSideLength(Node):
             try:
                 text = input('Square side length (m): ')
             except EOFError:
-                self.get_logger().info('Standard input closed; no more values will be read.')
+                self.get_logger().info(
+                    'Standard input closed; no more values will be read.'
+                )
                 return
 
             side_length = parse_side_length(text)
             if side_length is None:
-                self.get_logger().warn('Enter one finite floating-point value greater than zero.')
+                self.get_logger().warn(
+                    'Enter one finite floating-point value greater than zero.'
+                )
                 continue
             self._pending_lengths.put(side_length)
 

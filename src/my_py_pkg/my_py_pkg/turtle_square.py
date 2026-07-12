@@ -85,7 +85,9 @@ class TurtleSquare(Node):
         else:
             self._turn_toward_target(delta_x, delta_y)
 
-    def _drive_toward_target(self, distance: float, delta_x: float, delta_y: float) -> None:
+    def _drive_toward_target(
+        self, distance: float, delta_x: float, delta_y: float
+    ) -> None:
         if distance <= self.POSITION_TOLERANCE:
             self._publish_stop()
             self._advance_side()
