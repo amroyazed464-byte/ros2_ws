@@ -1,0 +1,25 @@
+[0.018s] Invoking command in '/home/jay/ros2_ws/build/my_cpp_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/jay/ros2_ws/install/my_py_pkg:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/jay/ros2_ws/build/my_cpp_pkg -- -j4 -l4
+[0.114s] [ 50%] [32mBuilding CXX object CMakeFiles/cpp_node.dir/src/my_first_node.cpp.o[0m
+[4.889s] [100%] [32m[1mLinking CXX executable cpp_node[0m
+[5.054s] [100%] Built target cpp_node
+[5.071s] Invoked command in '/home/jay/ros2_ws/build/my_cpp_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/jay/ros2_ws/install/my_py_pkg:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/jay/ros2_ws/build/my_cpp_pkg -- -j4 -l4
+[5.083s] Invoking command in '/home/jay/ros2_ws/build/my_cpp_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/jay/ros2_ws/install/my_py_pkg:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/jay/ros2_ws/build/my_cpp_pkg
+[5.096s] -- Install configuration: ""
+[5.097s] -- Installing: /home/jay/ros2_ws/install/my_cpp_pkg/lib/my_cpp_pkg/cpp_node
+[5.099s] -- Set non-toolchain portion of runtime path of "/home/jay/ros2_ws/install/my_cpp_pkg/lib/my_cpp_pkg/cpp_node" to ""
+[5.099s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/ament_index/resource_index/package_run_dependencies/my_cpp_pkg
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/ament_index/resource_index/parent_prefix_path/my_cpp_pkg
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/environment/ament_prefix_path.sh
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/environment/ament_prefix_path.dsv
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/environment/path.sh
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/environment/path.dsv
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/local_setup.bash
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/local_setup.sh
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/local_setup.zsh
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/local_setup.dsv
+[5.100s] -- Installing: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/package.dsv
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/ament_index/resource_index/packages/my_cpp_pkg
+[5.100s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/cmake/my_cpp_pkgConfig.cmake
+[5.101s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/cmake/my_cpp_pkgConfig-version.cmake
+[5.101s] -- Up-to-date: /home/jay/ros2_ws/install/my_cpp_pkg/share/my_cpp_pkg/package.xml
+[5.103s] Invoked command in '/home/jay/ros2_ws/build/my_cpp_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/jay/ros2_ws/install/my_py_pkg:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/jay/ros2_ws/build/my_cpp_pkg

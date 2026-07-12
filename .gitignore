@@ -1,0 +1,13 @@
+build/
+install/
+log/
+
+__pycache__/
+*.pyc
+
+.vscode/
+.idea/
+
+*.swp
+*.tmp
+*~

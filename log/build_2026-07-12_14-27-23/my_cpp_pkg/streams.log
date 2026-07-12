@@ -1,0 +1,21 @@
+[0.088s] Invoking command in '/home/jay/ros2_ws/build/my_cpp_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/jay/ros2_ws/install/my_py_pkg:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/jay/ros2_ws/src/my_cpp_pkg -DCMAKE_INSTALL_PREFIX=/home/jay/ros2_ws/install/my_cpp_pkg
+[0.301s] -- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[0.964s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[1.046s] -- Found rclcpp: 28.1.21 (/opt/ros/jazzy/share/rclcpp/cmake)
+[1.215s] -- Found rosidl_generator_c: 4.6.9 (/opt/ros/jazzy/share/rosidl_generator_c/cmake)
+[1.251s] -- Found rosidl_generator_cpp: 4.6.9 (/opt/ros/jazzy/share/rosidl_generator_cpp/cmake)
+[1.293s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[1.351s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[1.539s] -- Found rmw_implementation_cmake: 7.3.3 (/opt/ros/jazzy/share/rmw_implementation_cmake/cmake)
+[1.550s] -- Found rmw_fastrtps_cpp: 8.4.4 (/opt/ros/jazzy/share/rmw_fastrtps_cpp/cmake)
+[1.839s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[1.989s] -- Found example_interfaces: 0.12.1 (/opt/ros/jazzy/share/example_interfaces/cmake)
+[2.105s] [31mCMake Error at /opt/ros/jazzy/share/ament_cmake_core/cmake/symlink_install/ament_cmake_symlink_install_targets.cmake:67 (message):
+[2.106s]   ament_cmake_symlink_install_targets() 'smartphone' is not a target
+[2.108s] Call Stack (most recent call first):
+[2.108s]   /opt/ros/jazzy/share/ament_cmake_core/cmake/symlink_install/install.cmake:37 (ament_cmake_symlink_install_targets)
+[2.108s]   CMakeLists.txt:45 (install)
+[2.109s] 
+[2.110s] [0m
+[2.111s] -- Configuring incomplete, errors occurred!
+[2.144s] Invoked command in '/home/jay/ros2_ws/build/my_cpp_pkg' returned '1': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/jay/ros2_ws/install/my_py_pkg:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/jay/ros2_ws/src/my_cpp_pkg -DCMAKE_INSTALL_PREFIX=/home/jay/ros2_ws/install/my_cpp_pkg

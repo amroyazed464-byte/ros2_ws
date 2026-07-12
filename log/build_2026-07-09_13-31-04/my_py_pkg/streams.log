@@ -1,0 +1,24 @@
+[0.572s] Invoking command in '/home/jay/ros2_ws/src/my_py_pkg': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/jay/ros2_ws/build/my_py_pkg/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jay/ros2_ws/install/my_py_pkg/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/my_py_pkg build --build-base /home/jay/ros2_ws/build/my_py_pkg/build install --record /home/jay/ros2_ws/build/my_py_pkg/install.log --install-scripts $base/lib/my_py_pkg --single-version-externally-managed install_data
+[0.746s] running egg_info
+[0.757s] writing ../../build/my_py_pkg/my_py_pkg.egg-info/PKG-INFO
+[0.757s] writing dependency_links to ../../build/my_py_pkg/my_py_pkg.egg-info/dependency_links.txt
+[0.758s] writing entry points to ../../build/my_py_pkg/my_py_pkg.egg-info/entry_points.txt
+[0.759s] writing requirements to ../../build/my_py_pkg/my_py_pkg.egg-info/requires.txt
+[0.759s] writing top-level names to ../../build/my_py_pkg/my_py_pkg.egg-info/top_level.txt
+[0.782s] reading manifest file '../../build/my_py_pkg/my_py_pkg.egg-info/SOURCES.txt'
+[0.783s] writing manifest file '../../build/my_py_pkg/my_py_pkg.egg-info/SOURCES.txt'
+[0.783s] running build
+[0.783s] running build_py
+[0.783s] copying my_py_pkg/my_first_node.py -> /home/jay/ros2_ws/build/my_py_pkg/build/lib/my_py_pkg
+[0.783s] running install
+[0.787s] running install_lib
+[0.799s] copying /home/jay/ros2_ws/build/my_py_pkg/build/lib/my_py_pkg/my_first_node.py -> /home/jay/ros2_ws/install/my_py_pkg/lib/python3.12/site-packages/my_py_pkg
+[0.800s] byte-compiling /home/jay/ros2_ws/install/my_py_pkg/lib/python3.12/site-packages/my_py_pkg/my_first_node.py to my_first_node.cpython-312.pyc
+[0.800s] running install_data
+[0.800s] running install_egg_info
+[0.814s] removing '/home/jay/ros2_ws/install/my_py_pkg/lib/python3.12/site-packages/my_py_pkg-0.0.0-py3.12.egg-info' (and everything under it)
+[0.814s] Copying ../../build/my_py_pkg/my_py_pkg.egg-info to /home/jay/ros2_ws/install/my_py_pkg/lib/python3.12/site-packages/my_py_pkg-0.0.0-py3.12.egg-info
+[0.816s] running install_scripts
+[0.903s] Installing py_node script to /home/jay/ros2_ws/install/my_py_pkg/lib/my_py_pkg
+[0.903s] writing list of installed files to '/home/jay/ros2_ws/build/my_py_pkg/install.log'
+[0.932s] Invoked command in '/home/jay/ros2_ws/src/my_py_pkg' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/jay/ros2_ws/build/my_py_pkg/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jay/ros2_ws/install/my_py_pkg/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/my_py_pkg build --build-base /home/jay/ros2_ws/build/my_py_pkg/build install --record /home/jay/ros2_ws/build/my_py_pkg/install.log --install-scripts $base/lib/my_py_pkg --single-version-externally-managed install_data
