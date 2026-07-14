@@ -1,5 +1,7 @@
 """Cascaded service node that spawns and removes a turtlesim turtle."""
 
+from threading import Lock
+
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -33,6 +35,8 @@ class TurtleSummoner(Node):
             callback_group=self._callback_group,
         )
         self._spawned = False
+        self._operation_lock = Lock()
+        self._operation_pending = False
 
         self._remove_default_turtle()
 
@@ -78,18 +82,31 @@ class TurtleSummoner(Node):
             response.message = f'Invalid turtle position: {message}'
             return response
 
-        if request.data:
-            if self._spawned:
+        with self._operation_lock:
+            if self._operation_pending:
                 response.success = False
-                response.message = f'{turtle_name} is already spawned'
+                response.message = 'Another turtle operation is already in progress'
                 return response
-            return await self._spawn_turtle(x, y, turtle_name, response)
 
-        if not self._spawned:
-            response.success = False
-            response.message = f'{turtle_name} is not spawned'
-            return response
-        return await self._kill_turtle(turtle_name, response)
+            if request.data:
+                if self._spawned:
+                    response.success = False
+                    response.message = f'{turtle_name} is already spawned'
+                    return response
+            elif not self._spawned:
+                response.success = False
+                response.message = f'{turtle_name} is not spawned'
+                return response
+
+            self._operation_pending = True
+
+        try:
+            if request.data:
+                return await self._spawn_turtle(x, y, turtle_name, response)
+            return await self._kill_turtle(turtle_name, response)
+        finally:
+            with self._operation_lock:
+                self._operation_pending = False
 
     async def _spawn_turtle(
         self, x: float, y: float, turtle_name: str, response: SetBool.Response
@@ -106,13 +123,22 @@ class TurtleSummoner(Node):
         request.theta = 0.0
         request.name = turtle_name
         try:
-            await self._spawn_client.call_async(request)
+            spawn_response = await self._spawn_client.call_async(request)
         except Exception as error:
             response.success = False
             response.message = f'Failed to spawn {turtle_name}: {error}'
             return response
 
-        self._spawned = True
+        if spawn_response.name != turtle_name:
+            response.success = False
+            response.message = (
+                f'Spawn response name {spawn_response.name!r} did not match '
+                f'requested name {turtle_name!r}'
+            )
+            return response
+
+        with self._operation_lock:
+            self._spawned = True
         response.success = True
         response.message = f'Spawned {turtle_name}'
         return response
@@ -135,7 +161,8 @@ class TurtleSummoner(Node):
             response.message = f'Failed to kill {turtle_name}: {error}'
             return response
 
-        self._spawned = False
+        with self._operation_lock:
+            self._spawned = False
         response.success = True
         response.message = f'Removed {turtle_name}'
         return response
