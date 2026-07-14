@@ -5,10 +5,6 @@ import math
 
 def validate_position(x: float, y: float) -> tuple[bool, str]:
     """Validate a turtlesim visible-area coordinate pair."""
-    if not isinstance(x, float):
-        return False, 'x must be a float'
-    if not isinstance(y, float):
-        return False, 'y must be a float'
     if not math.isfinite(x):
         return False, 'x must be finite'
     if not math.isfinite(y):
