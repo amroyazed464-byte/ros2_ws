@@ -1,0 +1,11 @@
+from my_py_pkg.turtle_summoner_logic import validate_position
+
+
+def test_validate_position_accepts_turtlesim_bounds():
+    assert validate_position(7.3, 3.8) == (True, '')
+
+
+def test_validate_position_rejects_non_finite_or_out_of_bounds_values():
+    assert validate_position(float('nan'), 3.8) == (False, 'x must be finite')
+    assert validate_position(0.5, 3.8) == (False, 'x must be between 1.0 and 10.0')
+    assert validate_position(7.3, 10.5) == (False, 'y must be between 1.0 and 10.0')
