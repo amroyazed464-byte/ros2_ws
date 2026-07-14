@@ -58,7 +58,7 @@ class TurtleSummoner(Node):
         except Exception as error:
             self.get_logger().warning(f'Unable to remove turtle1 at startup: {error}')
 
-    def _parameters(self) -> tuple[float, float, str]:
+    def _read_parameters(self) -> tuple[float, float, str]:
         """Read configured coordinates and turtle name with numeric conversion."""
         x = self.get_parameter('x').get_parameter_value().double_value
         y = self.get_parameter('y').get_parameter_value().double_value
@@ -72,7 +72,7 @@ class TurtleSummoner(Node):
     ) -> SetBool.Response:
         """Dispatch the requested spawn or kill operation and await its result."""
         try:
-            x, y, turtle_name = self._parameters()
+            x, y, turtle_name = self._read_parameters()
         except (TypeError, ValueError) as error:
             response.success = False
             response.message = f'Invalid turtle position: {error}'

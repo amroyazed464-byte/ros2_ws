@@ -42,3 +42,14 @@ def test_turtle_summoner_reads_double_parameters_without_value_property():
     assert "get_parameter('x').get_parameter_value().double_value" in module
     assert "get_parameter('y').get_parameter_value().double_value" in module
     assert "get_parameter('turtle_name').get_parameter_value().string_value" in module
+
+
+def test_turtle_summoner_does_not_shadow_node_parameter_storage():
+    """Do not reuse Node's internal _parameters dictionary name for a method."""
+    module = (
+        Path(__file__).resolve().parents[1] / 'my_py_pkg' / 'turtle_summoner.py'
+    ).read_text(encoding='utf-8')
+
+    assert 'def _read_parameters(' in module
+    assert 'self._read_parameters()' in module
+    assert 'def _parameters(' not in module
