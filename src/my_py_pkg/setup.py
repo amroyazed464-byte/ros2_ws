@@ -29,6 +29,7 @@ setup(
             "smartphone = my_py_pkg.smartphone:main",
             "turtle_square = my_py_pkg.turtle_square:main",
             "set_side_length = my_py_pkg.set_side_length:main",
+            "turtle_summoner = my_py_pkg.turtle_summoner:main",
         ],
     },
 )
