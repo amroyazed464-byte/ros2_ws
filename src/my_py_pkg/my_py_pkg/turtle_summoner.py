@@ -60,9 +60,11 @@ class TurtleSummoner(Node):
 
     def _parameters(self) -> tuple[float, float, str]:
         """Read configured coordinates and turtle name with numeric conversion."""
-        x = float(self.get_parameter('x').value)
-        y = float(self.get_parameter('y').value)
-        turtle_name = str(self.get_parameter('turtle_name').value)
+        x = self.get_parameter('x').get_parameter_value().double_value
+        y = self.get_parameter('y').get_parameter_value().double_value
+        turtle_name = (
+            self.get_parameter('turtle_name').get_parameter_value().string_value
+        )
         return x, y, turtle_name
 
     async def _handle_request(

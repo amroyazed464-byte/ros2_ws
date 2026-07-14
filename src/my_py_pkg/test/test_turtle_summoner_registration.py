@@ -31,3 +31,14 @@ def test_turtle_summoner_reserves_each_operation_before_awaiting_ros():
     assert 'self._operation_lock = Lock()' in module
     assert 'self._operation_pending' in module
     assert 'finally:' in module
+
+
+def test_turtle_summoner_reads_double_parameters_without_value_property():
+    """Use the explicit ROS parameter message field for x and y."""
+    module = (
+        Path(__file__).resolve().parents[1] / 'my_py_pkg' / 'turtle_summoner.py'
+    ).read_text(encoding='utf-8')
+
+    assert "get_parameter('x').get_parameter_value().double_value" in module
+    assert "get_parameter('y').get_parameter_value().double_value" in module
+    assert "get_parameter('turtle_name').get_parameter_value().string_value" in module
