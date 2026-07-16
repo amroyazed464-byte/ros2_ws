@@ -1,6 +1,7 @@
 build/
 install/
 log/
+.worktrees/
 
 __pycache__/
 *.pyc
