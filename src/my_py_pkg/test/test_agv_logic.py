@@ -2,6 +2,7 @@
 
 import pytest
 
+import my_py_pkg.agv_logic as agv_logic
 from my_py_pkg.agv_logic import (
     DROPOFF,
     PICKUP,
@@ -60,3 +61,17 @@ def test_work_completion_is_rejected_during_recovery():
 def test_recharge_completion_requires_an_interrupted_goal():
     with pytest.raises(RuntimeError, match='without an interrupted goal'):
         AgvWorkflow().complete_recharge()
+
+
+def test_distance_to_target_uses_xy_euclidean_distance():
+    assert agv_logic.distance_to_target(0.0, 0.0, 3.0, 4.0) == 5.0
+    assert agv_logic.distance_to_target(2.5, 1.0, 2.5, 1.0) == 0.0
+
+
+def test_low_battery_latches_the_current_target_once():
+    workflow = AgvWorkflow(current_work_target=DROPOFF)
+
+    assert agv_logic.latch_recovery_for_battery(workflow, 20.1) is False
+    assert agv_logic.latch_recovery_for_battery(workflow, 20.0) is True
+    assert workflow.interrupted_target == DROPOFF
+    assert agv_logic.latch_recovery_for_battery(workflow, 10.0) is False

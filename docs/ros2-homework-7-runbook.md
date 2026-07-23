@@ -100,8 +100,14 @@ ros2 run my_py_pkg charging_station
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-ros2 run my_py_pkg agv_commander
+ros2 run my_py_pkg agv_commander --ros-args -p use_sim_time:=true
 ```
+
+调度器保持单线程线性运行，不启动外层 executor、线程或定时器回调。导航目标提交与
+取消直接使用 Jazzy `BasicNavigator` 提供的 `nav_to_pose_client`、目标句柄和异步
+future，并以短周期 `spin_once` 推进；等待期间会继续更新和发布电量。动作服务器、
+目标响应和取消响应均有单调时钟截止时间，超时后保留当前搬运目标并重试或进入充电
+恢复。`/recharge` 响应等待上限为 10 秒，超过上限时保持恢复状态并重试。
 
 ## ROS 接口检查
 

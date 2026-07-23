@@ -1,6 +1,7 @@
 """Pure state transitions for the factory AGV demonstration."""
 
 from dataclasses import dataclass
+import math
 
 
 PICKUP = 'pickup'
@@ -27,6 +28,16 @@ def should_interrupt_for_charge(
 ) -> bool:
     """Return whether low battery should start a new recovery cycle."""
     return not recovering and level <= threshold
+
+
+def distance_to_target(
+    current_x: float,
+    current_y: float,
+    target_x: float,
+    target_y: float,
+) -> float:
+    """Return planar distance from a current position to one exact target."""
+    return math.hypot(target_x - current_x, target_y - current_y)
 
 
 @dataclass
@@ -62,3 +73,13 @@ class AgvWorkflow:
             DROPOFF if self.current_work_target == PICKUP else PICKUP
         )
         return self.current_work_target
+
+
+def latch_recovery_for_battery(
+    workflow: AgvWorkflow,
+    battery_level: float,
+) -> bool:
+    """Latch low-battery recovery while preserving the active work target."""
+    if not should_interrupt_for_charge(battery_level, workflow.recovering):
+        return False
+    return workflow.begin_recovery()

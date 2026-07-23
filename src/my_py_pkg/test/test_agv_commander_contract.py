@@ -3,11 +3,13 @@
 from pathlib import Path
 
 
+REPOSITORY = Path(__file__).resolve().parents[3]
 SOURCE = (
     Path(__file__).resolve().parents[1]
     / 'my_py_pkg'
     / 'agv_commander.py'
 )
+RUNBOOK = REPOSITORY / 'docs' / 'ros2-homework-7-runbook.md'
 
 
 def test_commander_uses_required_nav2_topic_service_and_coordinates():
@@ -23,44 +25,117 @@ def test_commander_uses_required_nav2_topic_service_and_coordinates():
 
 def test_commander_polls_nav2_and_handles_close_enough_arrival():
     source = SOURCE.read_text(encoding='utf-8')
-    assert 'while rclpy.ok() and not self.isTaskComplete():' in source
-    assert 'feedback.distance_remaining < ARRIVAL_TOLERANCE' in source
-    assert 'self.cancelTask()' in source
+    assert 'feedback.current_pose.pose.position' in source
+    assert 'distance_to_target(' in source
+    assert 'feedback.distance_remaining' not in source
+    assert 'self._cancel_navigation()' in source
     assert 'TaskResult.SUCCEEDED' in source
     assert 'self._pause_with_battery(RETRY_DELAY)' in source
 
 
 def test_commander_interrupts_recharges_and_resumes_saved_work():
     source = SOURCE.read_text(encoding='utf-8')
-    assert 'self._workflow.begin_recovery()' in source
+    assert 'latch_recovery_for_battery(' in source
     assert "self._navigate_to(CHARGING)" in source
     assert 'self._request_recharge()' in source
     assert 'self._workflow.complete_recharge()' in source
     assert 'self._battery_level = 100.0' in source
 
 
-def test_commander_clears_feedback_and_retries_a_rejected_goal():
+def test_retry_pause_surfaces_low_battery_recovery_before_resubmission():
     source = SOURCE.read_text(encoding='utf-8')
     navigate = source[
         source.index('    def _navigate_to('):
-        source.index('    def _pause_with_battery(')
+        source.index('    def _request_recharge(')
+    ]
+    pause = source[
+        source.index('    def _pause_with_battery('):
+        source.index('    def _request_recharge(')
     ]
 
-    reset_feedback = navigate.index('self.feedback = None')
-    send_goal = navigate.index(
-        'goal_accepted = self.goToPose(self._pose_for(target))'
+    preflight = navigate.index(
+        'if target != CHARGING and self._begin_recovery_if_needed():'
     )
-    rejection = navigate.index('if not goal_accepted:')
-    retry_delay = navigate.index(
-        'self._pause_with_battery(RETRY_DELAY)', rejection
-    )
-    retry_return = navigate.index("return 'retry'", retry_delay)
-    poll_goal = navigate.index(
-        'while rclpy.ok() and not self.isTaskComplete():'
-    )
+    submit = navigate.index('submission = self._submit_navigation(target)')
+    preflight_recovery = navigate[preflight:submit]
 
-    assert reset_feedback < send_goal < rejection
-    assert rejection < retry_delay < retry_return < poll_goal
+    assert preflight < submit
+    assert (
+        'if target != CHARGING and self._begin_recovery_if_needed():\n'
+        '            if self.goal_handle is not None:'
+        in preflight_recovery
+    )
+    assert 'self._cancel_navigation()' in preflight_recovery
+    assert 'def _pause_with_battery(self, duration: float) -> bool:' in pause
+    assert 'self._begin_recovery_if_needed()' in pause
+    assert 'return recovery_started' in pause
+    assert (
+        "return 'low_battery' if recovery_started else 'retry'"
+        in source
+    )
+    assert 'return self._retry_after_error()' in navigate
+
+
+def test_navigation_submission_and_cancellation_are_bounded():
+    source = SOURCE.read_text(encoding='utf-8')
+
+    assert 'from nav2_msgs.action import NavigateToPose' in source
+    assert 'ACTION_RESPONSE_TIMEOUT =' in source
+    assert 'CANCEL_RESPONSE_TIMEOUT =' in source
+    assert 'def _submit_navigation(self, target: str) -> str:' in source
+    assert 'self.nav_to_pose_client.send_goal_async(' in source
+    assert 'self._feedbackCallback' in source
+    assert 'def _cancel_navigation(self) -> tuple[bool, bool]:' in source
+    assert 'self.goal_handle.cancel_goal_async()' in source
+    assert 'def _wait_for_future(' in source
+    assert 'deadline = time.monotonic() + timeout' in source
+    assert 'rclpy.spin_once(self, timeout_sec=' in source
+    assert 'self.goToPose(' not in source
+    assert 'self.cancelTask(' not in source
+    assert 'spin_until_future_complete' not in source
+
+
+def test_close_enough_distance_is_scoped_to_the_current_target():
+    source = SOURCE.read_text(encoding='utf-8')
+    navigate = source[
+        source.index('    def _navigate_to('):
+        source.index('    def _request_recharge(')
+    ]
+
+    assert 'position = feedback.current_pose.pose.position' in navigate
+    assert 'distance_to_target(position.x, position.y, x, y)' in navigate
+    assert 'feedback.distance_remaining' not in navigate
+
+
+def test_recharge_response_has_a_bounded_recovery_preserving_timeout():
+    source = SOURCE.read_text(encoding='utf-8')
+    recharge = source[
+        source.index('    def _request_recharge('):
+        source.index('    def run(')
+    ]
+
+    assert 'RECHARGE_RESPONSE_TIMEOUT = 10.0' in source
+    assert (
+        'self._wait_for_future(future, RECHARGE_RESPONSE_TIMEOUT)'
+        in recharge
+    )
+    assert 'future.cancel()' in recharge
+    timeout = recharge.index('if not response_ready:')
+    retry = recharge.index('self._pause_with_battery(RETRY_DELAY)', timeout)
+    failure = recharge.index('return False', retry)
+    recharge_completion = recharge.index(
+        'self._workflow.complete_recharge()'
+    )
+    assert timeout < retry < failure < recharge_completion
+
+
+def test_runbook_starts_commander_with_simulation_time():
+    runbook = RUNBOOK.read_text(encoding='utf-8')
+    assert (
+        'ros2 run my_py_pkg agv_commander '
+        '--ros-args -p use_sim_time:=true'
+        in runbook
+    )
 
 
 def test_battery_operation_starts_after_nav2_activation():
