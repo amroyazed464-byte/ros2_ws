@@ -33,6 +33,8 @@ setup(
             "battery = my_py_pkg.battery:main",
             "led_panel = my_py_pkg.led_panel:main",
             "turtle_controller = my_py_pkg.turtle_controller:main",
+            "agv_commander = my_py_pkg.agv_commander:main",
+            "charging_station = my_py_pkg.charging_station:main",
         ],
     },
 )
