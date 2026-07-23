@@ -69,16 +69,32 @@ cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
-MAP_YAML="$HOME/map.yaml"
-if [ ! -f "$MAP_YAML" ]; then
-  echo "地图文件不存在：$MAP_YAML。请先按本节的 SLAM 建图步骤生成它。" >&2
-  exit 1
+if [ ! -f "$HOME/map.yaml" ]; then
+  echo "地图文件不存在：$HOME/map.yaml。请先按本节的 SLAM 建图步骤生成它。" >&2
+else
+  ros2 launch turtlebot3_navigation2 navigation2.launch.py \
+    map:="$HOME/map.yaml" \
+    use_sim_time:=True
 fi
-ros2 launch turtlebot3_navigation2 navigation2.launch.py map:="$MAP_YAML" use_sim_time:=True
 ```
 
-在 Navigation2 的 RViz 中使用 **2D Pose Estimate** 设置 Burger 的初始位姿，
-并确认激光雷达扫描与地图墙体对齐；确认 Nav2 已激活后再启动 `agv_commander`。
+确认 Gazebo 左下角显示暂停按钮而不是播放三角形；如果显示播放三角形，先点击它恢复
+仿真。然后在 Navigation2 的 RViz 中使用 **2D Pose Estimate** 设置 Burger 的
+初始位姿，并确认激光雷达扫描与地图墙体对齐。点击 Navigation 2 面板中的
+**Startup**，等待 `Navigation: active` 和 `Localization: active` 同时出现后，
+再启动 `agv_commander`。
+
+可在另一个已加载 ROS 2 环境的终端中检查 Nav2 是否真正就绪：
+
+```bash
+ros2 lifecycle get /bt_navigator
+ros2 topic echo /amcl_pose --once
+ros2 action info /navigate_to_pose
+```
+
+预期 `/bt_navigator` 为 `active`，能够收到一条 `/amcl_pose`，并且
+`/navigate_to_pose` 存在可用的动作服务器。
+
 若本机 TurtleBot3 Jazzy 安装为不同的仿真/定位启动文件，请遵循该安装包的等效
 启动方式，但必须提供 `/map`、`/tf`、`/odom`、`/scan` 和可用的 Nav2
 `navigate_to_pose` 动作服务器。
@@ -108,6 +124,36 @@ ros2 run my_py_pkg agv_commander --ros-args -p use_sim_time:=true
 future，并以短周期 `spin_once` 推进；等待期间会继续更新和发布电量。动作服务器、
 目标响应和取消响应均有单调时钟截止时间，超时后保留当前搬运目标并重试或进入充电
 恢复。`/recharge` 响应等待上限为 10 秒，超过上限时保持恢复状态并重试。
+
+## 机器人不运动排障
+
+如果所有终端都已启动但 Burger 不运动，先看 RViz Navigation 2 面板和
+`agv_commander` 日志，不要立即修改导航参数。
+
+- Gazebo 左下角出现播放三角形时，仿真处于暂停状态。点击播放按钮并确认仿真时间、
+  激光数据和机器人状态继续更新。
+- RViz 显示 `Navigation: inactive` 时，导航生命周期节点尚未启动。先设置
+  **2D Pose Estimate**，再点击 **Startup**，等待 Navigation 和 Localization
+  都变为 `active`。
+- `agv_commander` 持续打印 `Waiting for amcl_pose to be received` 时，说明它还在
+  等待定位结果，尚未进入搬运循环。确认 `/amcl_pose` 可接收，并确认启动命令包含
+  `--ros-args -p use_sim_time:=true`。
+- `map:="$MAP_YAML"` 报 `malformed launch argument 'map:='` 时，说明当前终端中的
+  `MAP_YAML` 为空。直接使用 `map:="$HOME/map.yaml"`，并先确认该文件存在。
+
+综合检查命令：
+
+```bash
+ros2 topic echo /clock --once
+ros2 lifecycle get /bt_navigator
+ros2 topic echo /amcl_pose --once
+ros2 action info /navigate_to_pose
+ros2 param get /agv_commander use_sim_time
+```
+
+只有当仿真时间在推进、`/bt_navigator` 为 `active`、定位消息可接收、动作服务器
+可用且 `agv_commander` 的 `use_sim_time` 为 `True` 时，调度器才会开始发送搬运
+目标。正常日志应从等待定位切换为“Nav2 已激活，开始搬运循环”。
 
 ## ROS 接口检查
 
