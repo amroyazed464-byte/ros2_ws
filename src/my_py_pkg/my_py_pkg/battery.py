@@ -1,11 +1,10 @@
 """Publish an automatically charging and discharging battery level."""
 
+from my_py_pkg.battery_logic import next_battery_state
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Int32
-
-from my_py_pkg.battery_logic import next_battery_state
 
 
 class Battery(Node):

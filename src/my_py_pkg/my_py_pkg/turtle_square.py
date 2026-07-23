@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Draw one feedback-controlled turtlesim square for each requested side length."""
 
+from enum import auto, Enum
 import math
-from enum import Enum, auto
 
-import rclpy
 from geometry_msgs.msg import Twist
+from my_py_pkg.square_control import angle_error, corner_from_origin
+import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
 from turtlesim.msg import Pose
-
-from my_py_pkg.square_control import angle_error, corner_from_origin
 
 
 class MotionState(Enum):

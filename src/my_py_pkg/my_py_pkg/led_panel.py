@@ -1,11 +1,10 @@
 """Translate battery boundary states into a four-LED panel message."""
 
+from my_py_pkg.battery_logic import next_led3_state
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Int32, UInt8MultiArray
-
-from my_py_pkg.battery_logic import next_led3_state
 
 
 class LedPanel(Node):

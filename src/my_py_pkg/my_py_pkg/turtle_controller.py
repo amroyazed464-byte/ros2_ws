@@ -1,12 +1,11 @@
 """Teleport turtle1 in response to LED 3 state transitions."""
 
+from my_py_pkg.battery_logic import target_for_led3
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import UInt8MultiArray
 from turtlesim.srv import TeleportAbsolute
-
-from my_py_pkg.battery_logic import target_for_led3
 
 
 class TurtleController(Node):

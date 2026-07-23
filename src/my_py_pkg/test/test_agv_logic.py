@@ -3,16 +3,15 @@
 import gc
 import weakref
 
-import pytest
-
 import my_py_pkg.agv_logic as agv_logic
 from my_py_pkg.agv_logic import (
-    DROPOFF,
-    PICKUP,
     AgvWorkflow,
     deplete_battery,
+    DROPOFF,
+    PICKUP,
     should_interrupt_for_charge,
 )
+import pytest
 
 
 def test_battery_depletion_uses_elapsed_time_and_clamps_at_zero():

@@ -1,12 +1,11 @@
 """Unit tests for battery, LED, and turtle target state logic."""
 
-import pytest
-
 from my_py_pkg.battery_logic import (
     next_battery_state,
     next_led3_state,
     target_for_led3,
 )
+import pytest
 
 
 def test_battery_reverses_to_charging_at_empty():

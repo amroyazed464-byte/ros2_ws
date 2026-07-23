@@ -4,9 +4,8 @@ import importlib
 import sys
 from types import ModuleType, SimpleNamespace
 
-import pytest
-
 from my_py_pkg.agv_logic import LateGoalTracker
+import pytest
 
 
 class FakeFuture:

@@ -2,14 +2,13 @@
 
 from threading import Lock
 
+from my_py_pkg.turtle_summoner_logic import validate_position
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_srvs.srv import SetBool
 from turtlesim.srv import Kill, Spawn
-
-from my_py_pkg.turtle_summoner_logic import validate_position
 
 
 class TurtleSummoner(Node):

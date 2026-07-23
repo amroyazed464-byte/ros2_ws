@@ -4,11 +4,10 @@
 from queue import Empty, Queue
 from threading import Thread
 
+from my_py_pkg.square_control import parse_side_length
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
-
-from my_py_pkg.square_control import parse_side_length
 
 
 class SetSideLength(Node):

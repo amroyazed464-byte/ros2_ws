@@ -2,24 +2,22 @@
 
 import time
 
-import rclpy
 from geometry_msgs.msg import PoseStamped
-from nav2_msgs.action import NavigateToPose
-from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-from std_msgs.msg import Float32
-from std_srvs.srv import Trigger
-
 from my_py_pkg.agv_logic import (
-    DROPOFF,
-    PICKUP,
     AgvWorkflow,
-    LateGoalTracker,
     deplete_battery,
     distance_to_target,
+    DROPOFF,
     latch_recovery_for_battery,
+    LateGoalTracker,
+    PICKUP,
     should_interrupt_for_charge,
 )
-
+from nav2_msgs.action import NavigateToPose
+from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+import rclpy
+from std_msgs.msg import Float32
+from std_srvs.srv import Trigger
 
 CHARGING = 'charging'
 POSITIONS = {
