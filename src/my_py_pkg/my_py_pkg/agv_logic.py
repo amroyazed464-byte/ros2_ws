@@ -1,5 +1,6 @@
 """Pure state transitions for the factory AGV demonstration."""
 
+from collections import deque
 from dataclasses import dataclass, field
 import math
 
@@ -108,6 +109,7 @@ class _GoalOwnership:
 class LateGoalTracker:
     """Own every accepted late handle until its result is terminal."""
 
+    TERMINAL_HISTORY_LIMIT = 16
     _CANCEL_REASONS = {
         'cancel_request_failed',
         'cancel_failed',
@@ -119,7 +121,20 @@ class LateGoalTracker:
     def __init__(self):
         self._responses = []
         self._goals = []
-        self._terminal_handles = []
+        self._terminal_count = 0
+        self._terminal_history = deque(
+            maxlen=self.TERMINAL_HISTORY_LIMIT
+        )
+
+    @property
+    def terminal_count(self) -> int:
+        """Return the lifetime count of released terminal handles."""
+        return self._terminal_count
+
+    @property
+    def terminal_history(self) -> tuple[str, ...]:
+        """Return bounded, handle-free terminal diagnostics."""
+        return tuple(self._terminal_history)
 
     @property
     def pending_response_count(self) -> int:
@@ -181,11 +196,8 @@ class LateGoalTracker:
         return goal
 
     def owns_handle(self, handle) -> bool:
-        """Return whether a handle is cleanup-owned or terminal history."""
-        return (
-            self._find_goal(handle) is not None
-            or any(existing is handle for existing in self._terminal_handles)
-        )
+        """Return whether an accepted handle still needs cleanup."""
+        return self._find_goal(handle) is not None
 
     def mark_unresolved(self, handle, reason: str) -> None:
         """Deduplicate ownership for one accepted handle and failure reason."""
@@ -244,10 +256,10 @@ class LateGoalTracker:
             return
         if goal in self._goals:
             self._goals.remove(goal)
-        if not any(
-            existing is goal.handle for existing in self._terminal_handles
-        ):
-            self._terminal_handles.append(goal.handle)
+        self._terminal_count += 1
+        self._terminal_history.append(
+            f'result_terminal:{self._terminal_count}'
+        )
 
     def poll(self) -> list[LateGoalEvent]:
         """Advance completed late responses without blocking."""
@@ -327,7 +339,7 @@ class LateGoalTracker:
             if result_future is not None and result_future.done():
                 goal.result_future = None
                 try:
-                    result_future.result()
+                    result_message = result_future.result()
                 except Exception as error:
                     self.mark_unresolved(goal.handle, 'result_failed')
                     events.append(
@@ -338,6 +350,18 @@ class LateGoalTracker:
                         )
                     )
                 else:
+                    if result_message is None:
+                        self.mark_unresolved(
+                            goal.handle, 'result_failed'
+                        )
+                        events.append(
+                            LateGoalEvent(
+                                'result_failed',
+                                handle=goal.handle,
+                                detail='empty result response',
+                            )
+                        )
+                        continue
                     goal.result_terminal = True
                     goal.unresolved_reasons.clear()
                     events.append(

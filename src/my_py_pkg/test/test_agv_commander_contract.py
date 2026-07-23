@@ -133,7 +133,9 @@ def test_current_goal_result_creation_failure_transfers_owned_handle():
         'if self.goal_handle is None or self.result_future is None:'
         not in cancel
     )
-    assert 'try:\n                self.result_future.result()' in cancel
+    assert 'def _consume_current_result(' in cancel
+    assert 'result_message = self.result_future.result()' in cancel
+    assert 'self._request_navigation_cancel()' in cancel
     assert "'result_failed'" in cancel
     assert 'self._transfer_current_to_late_cleanup(' in cancel
 
@@ -150,6 +152,7 @@ def test_shutdown_interleaves_new_unresolved_retry_with_drain():
     loop = drain.index('while rclpy.ok()')
     assert loop < poll < retry
     assert 'has_retryable_unresolved' in drain
+    assert 'self._late_goals.pending_result_count' in drain
 
 
 def test_all_linear_wait_paths_service_late_goal_cleanup():

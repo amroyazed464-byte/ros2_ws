@@ -100,7 +100,9 @@ ROS-independent helpers live in `my_py_pkg/agv_logic.py`. They cover:
 - elapsed-time battery depletion and clamping;
 - the one-time low-battery threshold transition;
 - normal pickup/drop-off goal toggling;
-- preserving and restoring the interrupted goal.
+- preserving and restoring the interrupted goal;
+- identity-based ownership of accepted late goal handles, cancellation futures,
+  and terminal result futures.
 
 Keeping these transitions independent of ROS allows reliable unit tests on
 the Windows editing host.
@@ -132,6 +134,22 @@ cancellation on that exact handle and retains the resulting cancel future
 until it is acknowledged or fails. Late handles are never installed as the
 commander's current active handle.
 
+For ROS 2 Jazzy action-client cleanup, an accepted handle's
+`get_result_async()` future is retained and consumed through a non-empty
+terminal result response, including after cancellation acknowledgement. A
+result exception or empty result is not treated as terminal. Normal navigation
+completion and cancellation both use the same ownership-safe result consumer:
+an invalid result triggers a bounded goal-specific cancellation and transfers
+the exact handle to the late-goal tracker before commander fields are cleared.
+
+Cancellation or result failures are centralized as unresolved ownership. A
+handle receives at most one actual shutdown retry; merely waiting for an
+already pending future does not consume that retry. Once a non-empty terminal
+result has been consumed, the tracker releases the handle and all associated
+futures. It retains only a lifetime terminal counter and the last 16
+handle-free diagnostic strings, keeping memory bounded across the infinite
+pickup/drop-off loop.
+
 If Nav2 reports success, the goal is complete. If it reports failure, the node
 keeps the same target, waits three seconds, and retries. A cancellation is
 treated as an arrival only when the commander initiated it because the
@@ -148,8 +166,13 @@ continues into the charging transition.
 - A failed recharge response or service exception is logged and retried after
   a short delay.
 - A failed navigation goal retains and retries the same target.
-- Timed-out send-goal responses and their goal-specific cancellation futures
-  remain owned until completion. Shutdown performs a bounded final drain.
+- Timed-out send-goal responses and accepted handles' goal-specific
+  cancellation and result futures remain owned until terminal cleanup.
+  Shutdown interleaves polling with each handle's one permitted retry and
+  reports pending response, cancellation, result, and unresolved-handle
+  counts when its bounded drain expires.
+- Navigation result exceptions and empty responses never discard an accepted
+  handle; they initiate bounded cancellation and late cleanup before retry.
 - Unexpected missing feedback does not imply arrival; the final task result is
   still checked.
 - `Ctrl+C` cancels an active navigation task, destroys the node, and shuts down

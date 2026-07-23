@@ -192,20 +192,25 @@ class AgvCommander(BasicNavigator):
             self._clear_navigation()
             return True, False
         if self.result_future is not None and self.result_future.done():
-            try:
-                self.result_future.result()
-            except Exception as error:
-                self.get_logger().error(
-                    f'当前导航结果响应失败: {error}'
-                )
-                self._transfer_current_to_late_cleanup('result_failed')
-                return False, False
+            outcome, _, recovery_started = (
+                self._consume_current_result()
+            )
+            if outcome == 'terminal':
+                self._clear_navigation()
+                return True, recovery_started
+            return False, recovery_started
+        return self._request_navigation_cancel()
+
+    def _request_navigation_cancel(self) -> tuple[bool, bool]:
+        """Bound and retain cancellation for the exact current handle."""
+        if self.goal_handle is None:
             self._clear_navigation()
             return True, False
         if self._late_goals.has_cancel_for(self.goal_handle):
             self.get_logger().warning(
                 '当前导航目标的取消响应仍在等待'
             )
+            self._transfer_current_to_late_cleanup()
             return False, False
 
         try:
@@ -245,6 +250,33 @@ class AgvCommander(BasicNavigator):
             cancel_acknowledged=True
         )
         return True, recovery_started
+
+    def _consume_current_result(self) -> tuple[str, object | None, bool]:
+        """Consume a result without dropping ownership on invalid data."""
+        handle = self.goal_handle
+        if handle is None:
+            return 'retry', None, False
+
+        result_reason = 'result_failed'
+        if self.result_future is None:
+            self.get_logger().error('当前导航缺少结果 future')
+            result_reason = 'result_request_failed'
+        else:
+            try:
+                result_message = self.result_future.result()
+            except Exception as error:
+                self.get_logger().error(
+                    f'导航结果读取失败: {error}'
+                )
+            else:
+                if result_message is not None:
+                    return 'terminal', result_message, False
+                self.get_logger().error('导航结果为空')
+
+        _, recovery_started = self._request_navigation_cancel()
+        self._late_goals.mark_unresolved(handle, result_reason)
+        outcome = 'low_battery' if recovery_started else 'retry'
+        return outcome, None, recovery_started
 
     def _pause_with_battery(self, duration: float) -> bool:
         deadline = time.monotonic() + duration
@@ -424,15 +456,10 @@ class AgvCommander(BasicNavigator):
         if self.result_future is None:
             return self._retry_after_error()
 
-        try:
-            result_message = self.result_future.result()
-        except Exception as error:
-            self.get_logger().error(f'导航结果读取失败: {error}')
-            self._clear_navigation()
-            return self._retry_after_error()
-        if result_message is None:
-            self.get_logger().error('导航结果为空')
-            self._clear_navigation()
+        outcome, result_message, _ = self._consume_current_result()
+        if outcome != 'terminal':
+            if outcome == 'low_battery':
+                return outcome
             return self._retry_after_error()
 
         self.status = result_message.status
@@ -516,6 +543,7 @@ class AgvCommander(BasicNavigator):
                 '关闭前仍有未完成的迟到目标清理: '
                 f'响应 {self._late_goals.pending_response_count}, '
                 f'取消 {self._late_goals.pending_cancel_count}, '
+                f'结果 {self._late_goals.pending_result_count}, '
                 f'未解决句柄 {self._late_goals.unresolved_handle_count}'
             )
 

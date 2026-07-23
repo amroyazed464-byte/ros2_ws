@@ -1,5 +1,8 @@
 """Unit tests for AGV battery depletion and interrupted-goal memory."""
 
+import gc
+import weakref
+
 import pytest
 
 import my_py_pkg.agv_logic as agv_logic
@@ -173,7 +176,30 @@ def test_late_accepted_goal_is_canceled_and_acknowledged():
 
     assert [event.kind for event in events] == ['result_terminal']
     assert tracker.has_pending is False
-    assert tracker.owns_handle(goal_handle) is True
+    assert tracker.owns_handle(goal_handle) is False
+    assert tracker.terminal_count == 1
+
+
+def test_terminal_cleanup_releases_handle_and_bounds_diagnostics():
+    tracker = agv_logic.LateGoalTracker()
+    last_handle_ref = None
+
+    for _ in range(tracker.TERMINAL_HISTORY_LIMIT + 5):
+        handle = FakeGoalHandle()
+        tracker.retain_result(handle, handle.result_future)
+        handle.result_future.complete(object())
+        assert [event.kind for event in tracker.poll()] == [
+            'result_terminal'
+        ]
+        last_handle_ref = weakref.ref(handle)
+
+    del handle
+    gc.collect()
+
+    assert last_handle_ref() is None
+    assert tracker.terminal_count == tracker.TERMINAL_HISTORY_LIMIT + 5
+    assert len(tracker.terminal_history) == tracker.TERMINAL_HISTORY_LIMIT
+    assert all(isinstance(entry, str) for entry in tracker.terminal_history)
 
 
 def test_late_rejection_and_response_exception_are_cleaned_up():
@@ -289,6 +315,21 @@ def test_late_result_request_exception_keeps_handle_owned():
     ]
     assert tracker.unresolved_handles == (goal_handle,)
     assert tracker.pending_cancel_count == 1
+    assert tracker.owns_handle(goal_handle) is True
+
+
+def test_empty_result_response_is_unresolved_not_terminal():
+    tracker = agv_logic.LateGoalTracker()
+    result_future = FakeFuture()
+    goal_handle = FakeGoalHandle(result_future=result_future)
+    tracker.retain_result(goal_handle, result_future)
+    result_future.complete(None)
+
+    events = tracker.poll()
+
+    assert [event.kind for event in events] == ['result_failed']
+    assert tracker.unresolved_handles == (goal_handle,)
+    assert tracker.terminal_count == 0
     assert tracker.owns_handle(goal_handle) is True
 
 
