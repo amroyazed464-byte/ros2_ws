@@ -18,7 +18,8 @@ colcon test-result --verbose
 ## 启动 TurtleBot3、定位和 Nav2
 
 每个新终端都先加载 ROS 2 和工作空间。以下命令假定 TurtleBot3 Jazzy 的
-`burger` 仿真已经正确安装；将地图文件路径替换为实际的绝对路径。
+`burger` 仿真已经正确安装。导航使用 `$HOME/map.yaml`：它应是前一次 SLAM
+作业中为同一个 `turtlebot3_world` 创建的地图。
 
 终端 1：启动 TurtleBot3 World。
 
@@ -30,20 +31,57 @@ export TURTLEBOT3_MODEL=burger
 ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
 ```
 
-终端 2：启动地图定位和 Nav2（`/absolute/path/to/map.yaml` 必须存在）。
+如果 `$HOME/map.yaml` 不存在，先保持终端 1 的 World 运行，并用以下三个终端
+创建地图。建图完成后停止 Cartographer 和遥控节点（在各自终端按 `Ctrl+C`），
+再启动 Navigation2；不要让 SLAM 与 Navigation2 同时运行。
+
+终端 2：启动 Cartographer SLAM。
 
 ```bash
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
-ros2 launch nav2_bringup bringup_launch.py map:=/absolute/path/to/map.yaml use_sim_time:=True
+ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
 ```
 
-在 RViz 中使用 **2D Pose Estimate** 设置 Burger 的初始位姿，确认 Nav2 已激活
-后再启动 AGV 节点。若本机 TurtleBot3 Jazzy 安装为不同的仿真/定位启动文件，
-请遵循该安装包的等效启动方式，但必须提供 `/map`、`/tf`、`/odom`、`/scan` 和
-可用的 Nav2 `navigate_to_pose` 动作服务器。
+终端 3：使用键盘探索并建立覆盖 World 的地图。
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export TURTLEBOT3_MODEL=burger
+ros2 run turtlebot3_teleop teleop_keyboard
+```
+
+终端 4：完成探索后保存地图。
+
+```bash
+source /opt/ros/jazzy/setup.bash
+ros2 run nav2_map_server map_saver_cli -f "$HOME/map"
+```
+
+确认生成 `$HOME/map.yaml` 与 `$HOME/map.pgm` 后，停止上面的 SLAM 和遥控节点。
+
+终端 2：检查地图存在并启动定位与 Navigation2。
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+export TURTLEBOT3_MODEL=burger
+MAP_YAML="$HOME/map.yaml"
+if [ ! -f "$MAP_YAML" ]; then
+  echo "地图文件不存在：$MAP_YAML。请先按本节的 SLAM 建图步骤生成它。" >&2
+  exit 1
+fi
+ros2 launch turtlebot3_navigation2 navigation2.launch.py map:="$MAP_YAML" use_sim_time:=True
+```
+
+在 Navigation2 的 RViz 中使用 **2D Pose Estimate** 设置 Burger 的初始位姿，
+并确认激光雷达扫描与地图墙体对齐；确认 Nav2 已激活后再启动 `agv_commander`。
+若本机 TurtleBot3 Jazzy 安装为不同的仿真/定位启动文件，请遵循该安装包的等效
+启动方式，但必须提供 `/map`、`/tf`、`/odom`、`/scan` 和可用的 Nav2
+`navigate_to_pose` 动作服务器。
 
 ## 启动作业节点
 
