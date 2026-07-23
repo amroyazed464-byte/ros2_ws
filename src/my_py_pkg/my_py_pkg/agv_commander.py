@@ -88,32 +88,47 @@ class AgvCommander(BasicNavigator):
 
     def _service_late_goals(self) -> None:
         for event in self._late_goals.poll():
-            if event.kind == 'response_rejected':
-                self.get_logger().warning(
-                    '超时后的导航目标响应最终被服务器拒绝'
-                )
-            elif event.kind == 'response_failed':
-                self.get_logger().error(
-                    f'超时后的导航目标响应失败: {event.detail}'
-                )
-            elif event.kind == 'accepted_cancel_requested':
-                self.get_logger().warning(
-                    '超时后的导航目标已被接受，已立即请求取消该目标'
-                )
-            elif event.kind == 'cancel_request_failed':
-                self.get_logger().error(
-                    f'超时目标的取消请求创建失败: {event.detail}'
-                )
-            elif event.kind == 'cancel_acknowledged':
-                self.get_logger().info('超时目标的取消请求已确认')
-                if event.handle is self.goal_handle:
-                    self._clear_navigation()
-            elif event.kind == 'cancel_rejected':
-                self.get_logger().error('超时目标的取消请求未被接受')
-            elif event.kind == 'cancel_failed':
-                self.get_logger().error(
-                    f'超时目标的取消响应失败: {event.detail}'
-                )
+            self._log_late_goal_event(event)
+
+    def _log_late_goal_event(self, event) -> None:
+        if event.kind == 'response_rejected':
+            self.get_logger().warning(
+                '超时后的导航目标响应最终被服务器拒绝'
+            )
+        elif event.kind == 'response_failed':
+            self.get_logger().error(
+                f'超时后的导航目标响应失败: {event.detail}'
+            )
+        elif event.kind == 'accepted_cancel_requested':
+            self.get_logger().warning(
+                '超时后的导航目标已被接受，已立即请求取消该目标'
+            )
+        elif event.kind in {'cancel_request_failed', 'cancel_retry_failed'}:
+            self.get_logger().error(
+                f'超时目标的取消请求创建失败: {event.detail}'
+            )
+        elif event.kind == 'cancel_acknowledged':
+            self.get_logger().info('超时目标的取消请求已确认')
+        elif event.kind == 'cancel_rejected':
+            self.get_logger().error('超时目标的取消请求未被接受')
+        elif event.kind == 'cancel_failed':
+            self.get_logger().error(
+                f'超时目标的取消响应失败: {event.detail}'
+            )
+        elif event.kind in {'result_request_failed', 'result_retry_failed'}:
+            self.get_logger().error(
+                f'超时目标的结果请求创建失败: {event.detail}'
+            )
+        elif event.kind == 'result_failed':
+            self.get_logger().error(
+                f'超时目标的结果响应失败: {event.detail}'
+            )
+        elif event.kind == 'result_terminal':
+            self.get_logger().info('超时目标已到达终态，反馈清理完成')
+        elif event.kind == 'cancel_retry_requested':
+            self.get_logger().warning('已重试超时目标的取消请求')
+        elif event.kind == 'result_retry_requested':
+            self.get_logger().warning('已重试超时目标的结果请求')
 
     def _spin_once_with_late_cleanup(self, timeout: float) -> None:
         rclpy.spin_once(self, timeout_sec=timeout)
@@ -147,11 +162,44 @@ class AgvCommander(BasicNavigator):
         self.result_future = None
         self.feedback = None
 
+    def _transfer_current_to_late_cleanup(
+        self,
+        reason: str = '',
+        cancel_future=None,
+        cancel_acknowledged: bool = False,
+    ) -> None:
+        handle = self.goal_handle
+        if handle is None:
+            self._clear_navigation()
+            return
+        if self.result_future is not None:
+            self._late_goals.retain_result(
+                handle, self.result_future
+            )
+        else:
+            for event in self._late_goals.ensure_result(handle):
+                self._log_late_goal_event(event)
+        if cancel_future is not None:
+            self._late_goals.retain_cancel(handle, cancel_future)
+        if cancel_acknowledged:
+            self._late_goals.mark_cancel_acknowledged(handle)
+        if reason:
+            self._late_goals.mark_unresolved(handle, reason)
+        self._clear_navigation()
+
     def _cancel_navigation(self) -> tuple[bool, bool]:
-        if self.goal_handle is None or self.result_future is None:
+        if self.goal_handle is None:
             self._clear_navigation()
             return True, False
-        if self.result_future.done():
+        if self.result_future is not None and self.result_future.done():
+            try:
+                self.result_future.result()
+            except Exception as error:
+                self.get_logger().error(
+                    f'当前导航结果响应失败: {error}'
+                )
+                self._transfer_current_to_late_cleanup('result_failed')
+                return False, False
             self._clear_navigation()
             return True, False
         if self._late_goals.has_cancel_for(self.goal_handle):
@@ -164,14 +212,18 @@ class AgvCommander(BasicNavigator):
             cancel_future = self.goal_handle.cancel_goal_async()
         except Exception as error:
             self.get_logger().error(f'创建导航取消请求失败: {error}')
+            self._transfer_current_to_late_cleanup(
+                'cancel_request_failed'
+            )
             return False, False
 
         response_ready, recovery_started = self._wait_for_future(
             cancel_future, CANCEL_RESPONSE_TIMEOUT
         )
         if not response_ready:
-            self._late_goals.retain_cancel(
-                self.goal_handle, cancel_future
+            self._transfer_current_to_late_cleanup(
+                'cancel_timeout',
+                cancel_future=cancel_future,
             )
             self.get_logger().error(
                 '导航取消响应超时；已保留该目标的取消 future 继续清理'
@@ -182,12 +234,16 @@ class AgvCommander(BasicNavigator):
             response = cancel_future.result()
         except Exception as error:
             self.get_logger().error(f'导航取消请求失败: {error}')
+            self._transfer_current_to_late_cleanup('cancel_failed')
             return False, recovery_started
         if response is None or not response.goals_canceling:
             self.get_logger().error('导航取消请求未被接受')
+            self._transfer_current_to_late_cleanup('cancel_rejected')
             return False, recovery_started
 
-        self._clear_navigation()
+        self._transfer_current_to_late_cleanup(
+            cancel_acknowledged=True
+        )
         return True, recovery_started
 
     def _pause_with_battery(self, duration: float) -> bool:
@@ -278,7 +334,21 @@ class AgvCommander(BasicNavigator):
             return self._retry_after_error()
 
         self.goal_handle = goal_handle
-        self.result_future = goal_handle.get_result_async()
+        try:
+            self.result_future = goal_handle.get_result_async()
+        except Exception as error:
+            self.result_future = None
+            self.get_logger().error(
+                f'创建导航结果请求失败: {error}'
+            )
+            canceled, _ = self._cancel_navigation()
+            if not canceled:
+                self.get_logger().error(
+                    '导航结果请求失败后，目标取消未完成'
+                )
+            if recovery_started:
+                return 'low_battery'
+            return self._retry_after_error()
         if recovery_started:
             canceled, _ = self._cancel_navigation()
             if not canceled:
@@ -422,17 +492,15 @@ class AgvCommander(BasicNavigator):
 
     def _drain_late_goals(self, timeout: float) -> None:
         deadline = time.monotonic() + timeout
-        self._service_late_goals()
-        for event in self._late_goals.retry_unresolved():
-            if event.kind == 'cancel_retry_requested':
-                self.get_logger().warning(
-                    '关闭前已再次请求取消未解决的迟到目标'
-                )
-            else:
-                self.get_logger().error(
-                    f'关闭前重试迟到目标取消失败: {event.detail}'
-                )
-        while rclpy.ok() and self._late_goals.has_pending:
+        while rclpy.ok():
+            self._service_late_goals()
+            for event in self._late_goals.retry_unresolved():
+                self._log_late_goal_event(event)
+            if (
+                not self._late_goals.has_pending
+                and not self._late_goals.has_retryable_unresolved
+            ):
+                break
             remaining = deadline - time.monotonic()
             if remaining <= 0.0:
                 break
@@ -483,7 +551,11 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         commander.get_logger().info('收到停止请求')
     finally:
-        commander._cancel_navigation()
+        canceled, _ = commander._cancel_navigation()
+        if not canceled and commander.goal_handle is not None:
+            commander._transfer_current_to_late_cleanup(
+                'shutdown_cancel_failed'
+            )
         commander._drain_late_goals(SHUTDOWN_DRAIN_TIMEOUT)
         commander.destroy_node()
         rclpy.shutdown()

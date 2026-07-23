@@ -113,6 +113,45 @@ def test_timed_out_goal_response_is_retained_and_late_goals_are_drained():
     assert 'abandoned = future.cancel()' not in source
 
 
+def test_current_goal_result_creation_failure_transfers_owned_handle():
+    source = SOURCE.read_text(encoding='utf-8')
+    submit = source[
+        source.index('    def _submit_navigation('):
+        source.index('    def _navigate_to(')
+    ]
+    cancel = source[
+        source.index('    def _cancel_navigation('):
+        source.index('    def _pause_with_battery(')
+    ]
+
+    assert 'try:\n            self.result_future = ' in submit
+    assert 'goal_handle.get_result_async()' in submit
+    assert 'except Exception as error:' in submit
+    assert 'self._cancel_navigation()' in submit
+    assert 'if self.goal_handle is None:' in cancel
+    assert (
+        'if self.goal_handle is None or self.result_future is None:'
+        not in cancel
+    )
+    assert 'try:\n                self.result_future.result()' in cancel
+    assert "'result_failed'" in cancel
+    assert 'self._transfer_current_to_late_cleanup(' in cancel
+
+
+def test_shutdown_interleaves_new_unresolved_retry_with_drain():
+    source = SOURCE.read_text(encoding='utf-8')
+    drain = source[
+        source.index('    def _drain_late_goals('):
+        source.index('    def run(')
+    ]
+
+    retry = drain.index('self._late_goals.retry_unresolved()')
+    poll = drain.index('self._service_late_goals()')
+    loop = drain.index('while rclpy.ok()')
+    assert loop < poll < retry
+    assert 'has_retryable_unresolved' in drain
+
+
 def test_all_linear_wait_paths_service_late_goal_cleanup():
     source = SOURCE.read_text(encoding='utf-8')
     wait = source[

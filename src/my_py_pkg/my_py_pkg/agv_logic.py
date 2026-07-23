@@ -1,6 +1,6 @@
 """Pure state transitions for the factory AGV demonstration."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 
 
@@ -94,13 +94,32 @@ class LateGoalEvent:
     detail: str = ''
 
 
+@dataclass
+class _GoalOwnership:
+    handle: object
+    cancel_future: object | None = None
+    result_future: object | None = None
+    unresolved_reasons: set[str] = field(default_factory=set)
+    retry_attempted: bool = False
+    cancel_acknowledged: bool = False
+    result_terminal: bool = False
+
+
 class LateGoalTracker:
-    """Own timed-out goal responses and their specific cancel futures."""
+    """Own every accepted late handle until its result is terminal."""
+
+    _CANCEL_REASONS = {
+        'cancel_request_failed',
+        'cancel_failed',
+        'cancel_rejected',
+        'cancel_timeout',
+    }
+    _RESULT_REASONS = {'result_request_failed', 'result_failed'}
 
     def __init__(self):
         self._responses = []
-        self._cancellations = []
-        self._unresolved_handles = []
+        self._goals = []
+        self._terminal_handles = []
 
     @property
     def pending_response_count(self) -> int:
@@ -110,17 +129,67 @@ class LateGoalTracker:
     @property
     def pending_cancel_count(self) -> int:
         """Return the number of goal-specific cancellations still pending."""
-        return len(self._cancellations)
+        return sum(goal.cancel_future is not None for goal in self._goals)
+
+    @property
+    def pending_result_count(self) -> int:
+        """Return the number of terminal result responses still pending."""
+        return sum(goal.result_future is not None for goal in self._goals)
 
     @property
     def has_pending(self) -> bool:
-        """Return whether any late response or cancellation remains owned."""
-        return bool(self._responses or self._cancellations)
+        """Return whether any future still needs executor progress."""
+        return bool(
+            self._responses
+            or self.pending_cancel_count
+            or self.pending_result_count
+        )
+
+    @property
+    def unresolved_handles(self) -> tuple:
+        """Return deduplicated accepted handles needing cleanup retry."""
+        return tuple(
+            goal.handle
+            for goal in self._goals
+            if goal.unresolved_reasons
+        )
 
     @property
     def unresolved_handle_count(self) -> int:
-        """Return late accepted handles whose cancellation failed."""
-        return len(self._unresolved_handles)
+        """Return the count of accepted handles needing cleanup retry."""
+        return len(self.unresolved_handles)
+
+    @property
+    def has_retryable_unresolved(self) -> bool:
+        """Return whether shutdown still owes a retry to any handle."""
+        return any(
+            goal.unresolved_reasons and not goal.retry_attempted
+            for goal in self._goals
+        )
+
+    def _find_goal(self, handle):
+        for goal in self._goals:
+            if goal.handle is handle:
+                return goal
+        return None
+
+    def _goal_for(self, handle) -> _GoalOwnership:
+        goal = self._find_goal(handle)
+        if goal is None:
+            goal = _GoalOwnership(handle)
+            self._goals.append(goal)
+        return goal
+
+    def owns_handle(self, handle) -> bool:
+        """Return whether a handle is cleanup-owned or terminal history."""
+        return (
+            self._find_goal(handle) is not None
+            or any(existing is handle for existing in self._terminal_handles)
+        )
+
+    def mark_unresolved(self, handle, reason: str) -> None:
+        """Deduplicate ownership for one accepted handle and failure reason."""
+        self._goal_for(handle).unresolved_reasons.add(reason)
 
     def retain_response(self, future) -> None:
         """Retain one timed-out send-goal response future."""
@@ -129,23 +198,56 @@ class LateGoalTracker:
 
     def retain_cancel(self, handle, future) -> None:
         """Retain cancellation ownership for one exact goal handle."""
-        self._unresolved_handles = [
-            existing
-            for existing in self._unresolved_handles
-            if existing is not handle
-        ]
-        if not any(
-            existing_handle is handle
-            for existing_handle, _ in self._cancellations
-        ):
-            self._cancellations.append((handle, future))
+        goal = self._goal_for(handle)
+        goal.cancel_future = future
+        goal.unresolved_reasons.difference_update(self._CANCEL_REASONS)
+
+    def retain_result(self, handle, future) -> None:
+        """Retain the result future that removes Jazzy feedback state."""
+        goal = self._goal_for(handle)
+        goal.result_future = future
+        goal.unresolved_reasons.difference_update(self._RESULT_REASONS)
 
     def has_cancel_for(self, handle) -> bool:
         """Return whether cancellation is already pending for this handle."""
-        return any(
-            existing_handle is handle
-            for existing_handle, _ in self._cancellations
-        )
+        goal = self._find_goal(handle)
+        return goal is not None and goal.cancel_future is not None
+
+    def ensure_result(self, handle) -> list[LateGoalEvent]:
+        """Request and retain terminal result cleanup for one handle."""
+        goal = self._goal_for(handle)
+        if goal.result_future is not None or goal.result_terminal:
+            return []
+        try:
+            result_future = handle.get_result_async()
+        except Exception as error:
+            self.mark_unresolved(handle, 'result_request_failed')
+            return [
+                LateGoalEvent(
+                    'result_request_failed',
+                    handle=handle,
+                    detail=str(error),
+                )
+            ]
+        self.retain_result(handle, result_future)
+        return []
+
+    def mark_cancel_acknowledged(self, handle) -> None:
+        """Record cancellation acknowledgement for one exact handle."""
+        goal = self._goal_for(handle)
+        goal.cancel_acknowledged = True
+        goal.cancel_future = None
+        goal.unresolved_reasons.difference_update(self._CANCEL_REASONS)
+
+    def _finish_if_terminal(self, goal: _GoalOwnership) -> None:
+        if not goal.result_terminal or goal.cancel_future is not None:
+            return
+        if goal in self._goals:
+            self._goals.remove(goal)
+        if not any(
+            existing is goal.handle for existing in self._terminal_handles
+        ):
+            self._terminal_handles.append(goal.handle)
 
     def poll(self) -> list[LateGoalEvent]:
         """Advance completed late responses without blocking."""
@@ -159,7 +261,6 @@ class LateGoalTracker:
             try:
                 handle = future.result()
             except Exception as error:
-                self._unresolved_handles.append(handle)
                 events.append(
                     LateGoalEvent('response_failed', detail=str(error))
                 )
@@ -167,10 +268,12 @@ class LateGoalTracker:
             if handle is None or not handle.accepted:
                 events.append(LateGoalEvent('response_rejected'))
                 continue
+
+            events.extend(self.ensure_result(handle))
             try:
                 cancel_future = handle.cancel_goal_async()
             except Exception as error:
-                self._unresolved_handles.append(handle)
+                self.mark_unresolved(handle, 'cancel_request_failed')
                 events.append(
                     LateGoalEvent(
                         'cancel_request_failed',
@@ -185,54 +288,126 @@ class LateGoalTracker:
             )
         self._responses = pending_responses
 
-        pending_cancellations = []
-        for handle, future in self._cancellations:
-            if not future.done():
-                pending_cancellations.append((handle, future))
-                continue
-            try:
-                response = future.result()
-            except Exception as error:
-                events.append(
-                    LateGoalEvent(
-                        'cancel_failed',
-                        handle=handle,
-                        detail=str(error),
+        for goal in list(self._goals):
+            cancel_future = goal.cancel_future
+            if cancel_future is not None and cancel_future.done():
+                goal.cancel_future = None
+                try:
+                    response = cancel_future.result()
+                except Exception as error:
+                    self.mark_unresolved(goal.handle, 'cancel_failed')
+                    events.append(
+                        LateGoalEvent(
+                            'cancel_failed',
+                            handle=goal.handle,
+                            detail=str(error),
+                        )
                     )
-                )
-                continue
-            if response is not None and response.goals_canceling:
-                events.append(
-                    LateGoalEvent('cancel_acknowledged', handle=handle)
-                )
-            else:
-                self._unresolved_handles.append(handle)
-                events.append(
-                    LateGoalEvent('cancel_rejected', handle=handle)
-                )
-        self._cancellations = pending_cancellations
+                else:
+                    if response is not None and response.goals_canceling:
+                        self.mark_cancel_acknowledged(goal.handle)
+                        events.append(
+                            LateGoalEvent(
+                                'cancel_acknowledged',
+                                handle=goal.handle,
+                            )
+                        )
+                    else:
+                        self.mark_unresolved(
+                            goal.handle, 'cancel_rejected'
+                        )
+                        events.append(
+                            LateGoalEvent(
+                                'cancel_rejected',
+                                handle=goal.handle,
+                            )
+                        )
+
+            result_future = goal.result_future
+            if result_future is not None and result_future.done():
+                goal.result_future = None
+                try:
+                    result_future.result()
+                except Exception as error:
+                    self.mark_unresolved(goal.handle, 'result_failed')
+                    events.append(
+                        LateGoalEvent(
+                            'result_failed',
+                            handle=goal.handle,
+                            detail=str(error),
+                        )
+                    )
+                else:
+                    goal.result_terminal = True
+                    goal.unresolved_reasons.clear()
+                    events.append(
+                        LateGoalEvent(
+                            'result_terminal',
+                            handle=goal.handle,
+                        )
+                    )
+            self._finish_if_terminal(goal)
         return events
 
     def retry_unresolved(self) -> list[LateGoalEvent]:
-        """Retry cancellation once for each known unresolved late handle."""
+        """Retry result and cancellation once per unresolved handle."""
         events = []
-        handles = self._unresolved_handles
-        self._unresolved_handles = []
-        for handle in handles:
-            try:
-                cancel_future = handle.cancel_goal_async()
-            except Exception as error:
-                self._unresolved_handles.append(handle)
-                events.append(
-                    LateGoalEvent(
-                        'cancel_retry_failed',
-                        handle=handle,
-                        detail=str(error),
-                    )
-                )
+        for goal in list(self._goals):
+            if not goal.unresolved_reasons or goal.retry_attempted:
                 continue
-            self.retain_cancel(handle, cancel_future)
-            events.append(
-                LateGoalEvent('cancel_retry_requested', handle=handle)
-            )
+            retry_attempted = False
+
+            if goal.result_future is None and not goal.result_terminal:
+                retry_attempted = True
+                try:
+                    result_future = goal.handle.get_result_async()
+                except Exception as error:
+                    self.mark_unresolved(
+                        goal.handle, 'result_request_failed'
+                    )
+                    events.append(
+                        LateGoalEvent(
+                            'result_retry_failed',
+                            handle=goal.handle,
+                            detail=str(error),
+                        )
+                    )
+                else:
+                    self.retain_result(goal.handle, result_future)
+                    events.append(
+                        LateGoalEvent(
+                            'result_retry_requested',
+                            handle=goal.handle,
+                        )
+                    )
+
+            if (
+                goal.cancel_future is None
+                and not goal.cancel_acknowledged
+                and not goal.result_terminal
+            ):
+                retry_attempted = True
+                try:
+                    cancel_future = goal.handle.cancel_goal_async()
+                except Exception as error:
+                    self.mark_unresolved(
+                        goal.handle, 'cancel_request_failed'
+                    )
+                    events.append(
+                        LateGoalEvent(
+                            'cancel_retry_failed',
+                            handle=goal.handle,
+                            detail=str(error),
+                        )
+                    )
+                else:
+                    self.retain_cancel(goal.handle, cancel_future)
+                    events.append(
+                        LateGoalEvent(
+                            'cancel_retry_requested',
+                            handle=goal.handle,
+                        )
+                    )
+            if retry_attempted:
+                goal.retry_attempted = True
         return events
