@@ -13,7 +13,7 @@ class ChargingStation(Node):
     def __init__(self):
         super().__init__('charging_station')
         self._service = self.create_service(Trigger, '/recharge', self._recharge_callback)
-        self.get_logger().info('鍏呯數绔欏凡灏辩华锛岀瓑寰?Burger 鍒扮珯')
+        self.get_logger().info('充电站已就绪，等待 Burger 到站')
 
     def _recharge_callback(
         self,
@@ -21,10 +21,10 @@ class ChargingStation(Node):
         response: Trigger.Response,
     ) -> Trigger.Response:
         del request
-        self.get_logger().info('姝ｅ湪蹇厖...')
+        self.get_logger().info('正在快充...')
         time.sleep(3.0)
         response.success = True
-        response.message = '鍏呯數瀹屾垚锛岀數閲忓凡鎭㈠'
+        response.message = '充电完成，电量已恢复'
         self.get_logger().info(response.message)
         return response
 
