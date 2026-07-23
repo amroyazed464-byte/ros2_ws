@@ -37,3 +37,48 @@ def test_commander_interrupts_recharges_and_resumes_saved_work():
     assert 'self._request_recharge()' in source
     assert 'self._workflow.complete_recharge()' in source
     assert 'self._battery_level = 100.0' in source
+
+
+def test_commander_clears_feedback_and_retries_a_rejected_goal():
+    source = SOURCE.read_text(encoding='utf-8')
+    navigate = source[
+        source.index('    def _navigate_to('):
+        source.index('    def _pause_with_battery(')
+    ]
+
+    reset_feedback = navigate.index('self.feedback = None')
+    send_goal = navigate.index(
+        'goal_accepted = self.goToPose(self._pose_for(target))'
+    )
+    rejection = navigate.index('if not goal_accepted:')
+    retry_delay = navigate.index(
+        'self._pause_with_battery(RETRY_DELAY)', rejection
+    )
+    retry_return = navigate.index("return 'retry'", retry_delay)
+    poll_goal = navigate.index(
+        'while rclpy.ok() and not self.isTaskComplete():'
+    )
+
+    assert reset_feedback < send_goal < rejection
+    assert rejection < retry_delay < retry_return < poll_goal
+
+
+def test_battery_operation_starts_after_nav2_activation():
+    source = SOURCE.read_text(encoding='utf-8')
+    run = source[source.index('    def run('):source.index('\ndef main(')]
+
+    wait_for_nav2 = run.index('self.waitUntilNav2Active()')
+    activation_time = run.index('activated_at = time.monotonic()')
+    reset_update = run.index('self._battery_updated_at = activated_at')
+    reset_publish = run.index('self._battery_published_at = activated_at')
+    initial_publish = run.index('self._publish_battery()')
+    work_loop = run.index('while rclpy.ok():')
+
+    assert (
+        wait_for_nav2
+        < activation_time
+        < reset_update
+        < reset_publish
+        < initial_publish
+        < work_loop
+    )

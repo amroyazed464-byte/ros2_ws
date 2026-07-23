@@ -74,7 +74,15 @@ class AgvCommander(BasicNavigator):
         self.get_logger().info(
             f'下发导航目标 {target}: [{x:.1f}, {y:.1f}]'
         )
-        self.goToPose(self._pose_for(target))
+        self.feedback = None
+        goal_accepted = self.goToPose(self._pose_for(target))
+        if not goal_accepted:
+            self.get_logger().error(
+                f'导航目标 {target} 被拒绝，{RETRY_DELAY:.0f} 秒后重试'
+            )
+            self._pause_with_battery(RETRY_DELAY)
+            return 'retry'
+
         close_enough = False
 
         while rclpy.ok() and not self.isTaskComplete():
@@ -164,6 +172,10 @@ class AgvCommander(BasicNavigator):
         """Wait for Nav2 and run the AGV state loop until shutdown."""
         self.get_logger().info('等待 Nav2 激活')
         self.waitUntilNav2Active()
+        activated_at = time.monotonic()
+        self._battery_updated_at = activated_at
+        self._battery_published_at = activated_at
+        self._publish_battery()
         self.get_logger().info('Nav2 已激活，开始搬运循环')
 
         while rclpy.ok():
