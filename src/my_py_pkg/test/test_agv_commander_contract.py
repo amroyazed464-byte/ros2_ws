@@ -95,6 +95,40 @@ def test_navigation_submission_and_cancellation_are_bounded():
     assert 'spin_until_future_complete' not in source
 
 
+def test_timed_out_goal_response_is_retained_and_late_goals_are_drained():
+    source = SOURCE.read_text(encoding='utf-8')
+    submit = source[
+        source.index('    def _submit_navigation('):
+        source.index('    def _navigate_to(')
+    ]
+    main = source[source.index('def main('):]
+
+    assert 'if send_future.done():' in submit
+    assert 'self._late_goals.retain_response(send_future)' in submit
+    assert 'send_future.cancel()' not in source
+    assert 'def _service_late_goals(self) -> None:' in source
+    assert 'def _drain_late_goals(self, timeout: float) -> None:' in source
+    assert 'commander._drain_late_goals(SHUTDOWN_DRAIN_TIMEOUT)' in main
+    assert 'abandoned = cancel_future.cancel()' not in source
+    assert 'abandoned = future.cancel()' not in source
+
+
+def test_all_linear_wait_paths_service_late_goal_cleanup():
+    source = SOURCE.read_text(encoding='utf-8')
+    wait = source[
+        source.index('    def _wait_for_future('):
+        source.index('    def _clear_navigation(')
+    ]
+    pause = source[
+        source.index('    def _pause_with_battery('):
+        source.index('    def _retry_after_error(')
+    ]
+
+    assert 'self._spin_once_with_late_cleanup(' in wait
+    assert 'self._spin_once_with_late_cleanup(' in pause
+    assert 'time.sleep(' not in pause
+
+
 def test_close_enough_distance_is_scoped_to_the_current_target():
     source = SOURCE.read_text(encoding='utf-8')
     navigate = source[

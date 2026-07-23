@@ -15,23 +15,28 @@ Use a single linear polling loop built around Nav2 Simple Commander's
 battery publication, and the recharge client share one ROS node without a
 second executor.
 
-This architecture follows the Simple Commander polling model:
+This architecture follows the Simple Commander polling model while replacing
+its indefinitely blocking goal-submission and cancellation helpers with
+bounded asynchronous waits:
 
 ```text
-send goal
+send goal asynchronously
   |
   v
-poll isTaskComplete()
+spin_once with monotonic deadlines
   |-- publish elapsed-time battery updates
-  |-- inspect distance feedback
+  |-- compare feedback current_pose to the exact target
   |-- cancel and divert when battery <= 20%
+  |-- retain and clean up late goal responses
   v
 handle arrival, failure, or recharge
 ```
 
 Timer callbacks, worker threads, and a continuously spinning executor are not
-used for the navigation wait loop. This avoids calling Simple Commander
-polling methods from an executor callback and prevents nested-spinning errors.
+used for the navigation wait loop. One linear owner advances action, service,
+and late-cleanup futures with short `spin_once` calls. This avoids calling
+Simple Commander polling methods from an executor callback and prevents
+nested-spinning errors.
 
 ## Components
 
@@ -105,10 +110,27 @@ the Windows editing host.
 Every goal is represented as a `geometry_msgs/msg/PoseStamped` in the `map`
 frame with an identity orientation.
 
-The commander polls `isTaskComplete()` and reads `getFeedback()`. If
-`distance_remaining < 0.25` metres, it cancels the remaining goal alignment
-and treats the position as reached. This prevents the robot from draining its
-battery while trying to achieve an unnecessarily exact final orientation.
+The commander submits `NavigateToPose` through the Jazzy
+`BasicNavigator.nav_to_pose_client` and advances its send, result, and
+cancellation futures in the linear loop. Goal-server availability, send-goal
+responses, and cancellation responses have bounded monotonic deadlines.
+
+The commander reads `getFeedback()`, extracts
+`current_pose.pose.position`, and computes Euclidean XY distance to the exact
+target currently being attempted. If that target-scoped distance is below
+`0.25` metres, it requests cancellation of the remaining goal alignment and
+treats the position as reached. It never trusts the shared
+`distance_remaining` value, because feedback from a preceding cancellation
+can arrive during a subsequent submission.
+
+A send-goal response that misses its deadline is not locally canceled or
+discarded. A ROS-independent late-goal tracker retains the response future.
+Each normal action wait, battery-aware retry pause, recharge wait, and shutdown
+drain polls the tracker from the same executor context. If a late response
+contains an accepted goal handle, the tracker immediately requests
+cancellation on that exact handle and retains the resulting cancel future
+until it is acknowledged or fails. Late handles are never installed as the
+commander's current active handle.
 
 If Nav2 reports success, the goal is complete. If it reports failure, the node
 keeps the same target, waits three seconds, and retries. A cancellation is
@@ -121,9 +143,13 @@ continues into the charging transition.
 - Nav2 activation is awaited with progress logging.
 - If `/recharge` is unavailable, the commander remains in charging state and
   retries without discarding the interrupted target.
+- A `/recharge` response has a 10-second monotonic deadline. Timeout cancels
+  the local service wait but preserves recovery and the interrupted target.
 - A failed recharge response or service exception is logged and retried after
   a short delay.
 - A failed navigation goal retains and retries the same target.
+- Timed-out send-goal responses and their goal-specific cancellation futures
+  remain owned until completion. Shutdown performs a bounded final drain.
 - Unexpected missing feedback does not imply arrival; the final task result is
   still checked.
 - `Ctrl+C` cancels an active navigation task, destroys the node, and shuts down
@@ -141,8 +167,9 @@ agv_commander = my_py_pkg.agv_commander:main
 charging_station = my_py_pkg.charging_station:main
 ```
 
-`package.xml` declares `nav2_simple_commander` in addition to the existing
-`rclpy`, `geometry_msgs`, `std_msgs`, and `std_srvs` dependencies.
+`package.xml` declares both `nav2_simple_commander` and the directly imported
+`nav2_msgs` action package in addition to the existing `rclpy`,
+`geometry_msgs`, `std_msgs`, and `std_srvs` dependencies.
 
 The repository does not contain the TurtleBot3 Nav2 parameter file, so this
 change does not copy or modify `nav2_params.yaml`. Runtime instructions will
@@ -159,11 +186,15 @@ Implementation follows test-driven development.
 Windows-hosted automated checks cover:
 
 - exact elapsed-time battery drain and lower clamping;
+- target-scoped Euclidean distance;
 - a single threshold crossing at `20.0%`;
 - pickup/drop-off alternation;
 - retention of an interrupted target through charging;
+- late response retention, accepted-goal cancellation, rejection cleanup, and
+  cancellation outcome cleanup using ROS-independent fake futures;
 - source contracts for required topic, service, message types, coordinates,
-  cancellation, feedback tolerance, and ROS logs;
+  bounded cancellation, feedback tolerance, recharge timeout, late cleanup,
+  simulation time, and ROS logs;
 - both console-script registrations and the package dependency;
 - all existing `my_py_pkg` tests;
 - Python syntax compilation and Git whitespace checks.
@@ -183,7 +214,7 @@ With `turtlebot3_world` and Nav2 running, start the two nodes independently:
 
 ```bash
 ros2 run my_py_pkg charging_station
-ros2 run my_py_pkg agv_commander
+ros2 run my_py_pkg agv_commander --ros-args -p use_sim_time:=true
 ```
 
 Runtime acceptance checks confirm:
@@ -218,7 +249,10 @@ and authenticated GitHub CLI session on the Windows host.
 - Successful charging restores the battery to `100.0%` and resumes the saved
   goal.
 - Pickup/drop-off alternation continues after the resumed goal completes.
-- Navigation uses the `0.25 m` arrival tolerance and retries failed goals.
+- Navigation uses target-scoped current-pose Euclidean distance for the
+  `0.25 m` arrival tolerance and retries failed goals.
+- Navigation submission, cancellation, recharge response, and shutdown late
+  cleanup are bounded without threads or an outer executor.
 - The recharge service logs charging and returns success after its simulated
   delay.
 - Existing package functionality remains registered and tested.

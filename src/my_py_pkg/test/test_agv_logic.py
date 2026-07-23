@@ -75,3 +75,116 @@ def test_low_battery_latches_the_current_target_once():
     assert agv_logic.latch_recovery_for_battery(workflow, 20.0) is True
     assert workflow.interrupted_target == DROPOFF
     assert agv_logic.latch_recovery_for_battery(workflow, 10.0) is False
+
+
+class FakeFuture:
+    def __init__(self):
+        self._done = False
+        self._result = None
+        self._error = None
+
+    def done(self):
+        return self._done
+
+    def result(self):
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+    def complete(self, result=None, error=None):
+        self._result = result
+        self._error = error
+        self._done = True
+
+
+class FakeGoalHandle:
+    def __init__(self, accepted=True, cancel_future=None):
+        self.accepted = accepted
+        self.cancel_future = cancel_future or FakeFuture()
+        self.cancel_requests = 0
+
+    def cancel_goal_async(self):
+        self.cancel_requests += 1
+        return self.cancel_future
+
+
+class FakeCancelResponse:
+    def __init__(self, accepted):
+        self.goals_canceling = [object()] if accepted else []
+
+
+def test_late_goal_tracker_retains_pending_response_until_completion():
+    tracker = agv_logic.LateGoalTracker()
+    send_future = FakeFuture()
+
+    tracker.retain_response(send_future)
+
+    assert tracker.poll() == []
+    assert tracker.pending_response_count == 1
+    assert tracker.has_pending is True
+
+
+def test_late_accepted_goal_is_canceled_and_acknowledged():
+    tracker = agv_logic.LateGoalTracker()
+    send_future = FakeFuture()
+    cancel_future = FakeFuture()
+    goal_handle = FakeGoalHandle(cancel_future=cancel_future)
+    tracker.retain_response(send_future)
+
+    send_future.complete(goal_handle)
+    events = tracker.poll()
+
+    assert [event.kind for event in events] == ['accepted_cancel_requested']
+    assert events[0].handle is goal_handle
+    assert goal_handle.cancel_requests == 1
+    assert tracker.pending_response_count == 0
+    assert tracker.pending_cancel_count == 1
+
+    cancel_future.complete(FakeCancelResponse(accepted=True))
+    events = tracker.poll()
+
+    assert [event.kind for event in events] == ['cancel_acknowledged']
+    assert events[0].handle is goal_handle
+    assert tracker.has_pending is False
+
+
+def test_late_rejection_and_response_exception_are_cleaned_up():
+    tracker = agv_logic.LateGoalTracker()
+    rejected_future = FakeFuture()
+    failed_future = FakeFuture()
+    tracker.retain_response(rejected_future)
+    tracker.retain_response(failed_future)
+
+    rejected_future.complete(FakeGoalHandle(accepted=False))
+    failed_future.complete(error=RuntimeError('late response failed'))
+    events = tracker.poll()
+
+    assert [event.kind for event in events] == [
+        'response_rejected',
+        'response_failed',
+    ]
+    assert events[1].detail == 'late response failed'
+    assert tracker.has_pending is False
+
+
+def test_late_cancel_failure_is_reported_and_cleaned_up():
+    tracker = agv_logic.LateGoalTracker()
+    cancel_future = FakeFuture()
+    goal_handle = FakeGoalHandle(cancel_future=cancel_future)
+    tracker.retain_cancel(goal_handle, cancel_future)
+
+    cancel_future.complete(FakeCancelResponse(accepted=False))
+    events = tracker.poll()
+
+    assert [event.kind for event in events] == ['cancel_rejected']
+    assert events[0].handle is goal_handle
+    assert tracker.unresolved_handle_count == 1
+    assert tracker.has_pending is False
+
+    retry_future = FakeFuture()
+    goal_handle.cancel_future = retry_future
+    events = tracker.retry_unresolved()
+
+    assert [event.kind for event in events] == ['cancel_retry_requested']
+    assert tracker.unresolved_handle_count == 0
+    assert tracker.pending_cancel_count == 1

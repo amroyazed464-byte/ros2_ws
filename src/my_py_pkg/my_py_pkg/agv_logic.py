@@ -83,3 +83,156 @@ def latch_recovery_for_battery(
     if not should_interrupt_for_charge(battery_level, workflow.recovering):
         return False
     return workflow.begin_recovery()
+
+
+@dataclass(frozen=True)
+class LateGoalEvent:
+    """Describe one completed late goal-response cleanup transition."""
+
+    kind: str
+    handle: object | None = None
+    detail: str = ''
+
+
+class LateGoalTracker:
+    """Own timed-out goal responses and their specific cancel futures."""
+
+    def __init__(self):
+        self._responses = []
+        self._cancellations = []
+        self._unresolved_handles = []
+
+    @property
+    def pending_response_count(self) -> int:
+        """Return the number of send-goal responses still pending."""
+        return len(self._responses)
+
+    @property
+    def pending_cancel_count(self) -> int:
+        """Return the number of goal-specific cancellations still pending."""
+        return len(self._cancellations)
+
+    @property
+    def has_pending(self) -> bool:
+        """Return whether any late response or cancellation remains owned."""
+        return bool(self._responses or self._cancellations)
+
+    @property
+    def unresolved_handle_count(self) -> int:
+        """Return late accepted handles whose cancellation failed."""
+        return len(self._unresolved_handles)
+
+    def retain_response(self, future) -> None:
+        """Retain one timed-out send-goal response future."""
+        if not any(existing is future for existing in self._responses):
+            self._responses.append(future)
+
+    def retain_cancel(self, handle, future) -> None:
+        """Retain cancellation ownership for one exact goal handle."""
+        self._unresolved_handles = [
+            existing
+            for existing in self._unresolved_handles
+            if existing is not handle
+        ]
+        if not any(
+            existing_handle is handle
+            for existing_handle, _ in self._cancellations
+        ):
+            self._cancellations.append((handle, future))
+
+    def has_cancel_for(self, handle) -> bool:
+        """Return whether cancellation is already pending for this handle."""
+        return any(
+            existing_handle is handle
+            for existing_handle, _ in self._cancellations
+        )
+
+    def poll(self) -> list[LateGoalEvent]:
+        """Advance completed late responses without blocking."""
+        events = []
+
+        pending_responses = []
+        for future in self._responses:
+            if not future.done():
+                pending_responses.append(future)
+                continue
+            try:
+                handle = future.result()
+            except Exception as error:
+                self._unresolved_handles.append(handle)
+                events.append(
+                    LateGoalEvent('response_failed', detail=str(error))
+                )
+                continue
+            if handle is None or not handle.accepted:
+                events.append(LateGoalEvent('response_rejected'))
+                continue
+            try:
+                cancel_future = handle.cancel_goal_async()
+            except Exception as error:
+                self._unresolved_handles.append(handle)
+                events.append(
+                    LateGoalEvent(
+                        'cancel_request_failed',
+                        handle=handle,
+                        detail=str(error),
+                    )
+                )
+                continue
+            self.retain_cancel(handle, cancel_future)
+            events.append(
+                LateGoalEvent('accepted_cancel_requested', handle=handle)
+            )
+        self._responses = pending_responses
+
+        pending_cancellations = []
+        for handle, future in self._cancellations:
+            if not future.done():
+                pending_cancellations.append((handle, future))
+                continue
+            try:
+                response = future.result()
+            except Exception as error:
+                events.append(
+                    LateGoalEvent(
+                        'cancel_failed',
+                        handle=handle,
+                        detail=str(error),
+                    )
+                )
+                continue
+            if response is not None and response.goals_canceling:
+                events.append(
+                    LateGoalEvent('cancel_acknowledged', handle=handle)
+                )
+            else:
+                self._unresolved_handles.append(handle)
+                events.append(
+                    LateGoalEvent('cancel_rejected', handle=handle)
+                )
+        self._cancellations = pending_cancellations
+        return events
+
+    def retry_unresolved(self) -> list[LateGoalEvent]:
+        """Retry cancellation once for each known unresolved late handle."""
+        events = []
+        handles = self._unresolved_handles
+        self._unresolved_handles = []
+        for handle in handles:
+            try:
+                cancel_future = handle.cancel_goal_async()
+            except Exception as error:
+                self._unresolved_handles.append(handle)
+                events.append(
+                    LateGoalEvent(
+                        'cancel_retry_failed',
+                        handle=handle,
+                        detail=str(error),
+                    )
+                )
+                continue
+            self.retain_cancel(handle, cancel_future)
+            events.append(
+                LateGoalEvent('cancel_retry_requested', handle=handle)
+            )
+        return events

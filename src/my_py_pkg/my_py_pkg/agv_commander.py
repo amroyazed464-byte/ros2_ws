@@ -13,6 +13,7 @@ from my_py_pkg.agv_logic import (
     DROPOFF,
     PICKUP,
     AgvWorkflow,
+    LateGoalTracker,
     deplete_battery,
     distance_to_target,
     latch_recovery_for_battery,
@@ -34,6 +35,7 @@ ACTION_SERVER_TIMEOUT = 5.0
 ACTION_RESPONSE_TIMEOUT = 5.0
 CANCEL_RESPONSE_TIMEOUT = 5.0
 RECHARGE_RESPONSE_TIMEOUT = 10.0
+SHUTDOWN_DRAIN_TIMEOUT = 5.0
 
 
 class AgvCommander(BasicNavigator):
@@ -44,6 +46,7 @@ class AgvCommander(BasicNavigator):
         self._battery_publisher = self.create_publisher(Float32, '/burger_battery', 10)
         self._recharge_client = self.create_client(Trigger, '/recharge')
         self._workflow = AgvWorkflow()
+        self._late_goals = LateGoalTracker()
         self._battery_level = 100.0
         now = time.monotonic()
         self._battery_updated_at = now
@@ -83,6 +86,39 @@ class AgvCommander(BasicNavigator):
             self._workflow, self._battery_level
         )
 
+    def _service_late_goals(self) -> None:
+        for event in self._late_goals.poll():
+            if event.kind == 'response_rejected':
+                self.get_logger().warning(
+                    '超时后的导航目标响应最终被服务器拒绝'
+                )
+            elif event.kind == 'response_failed':
+                self.get_logger().error(
+                    f'超时后的导航目标响应失败: {event.detail}'
+                )
+            elif event.kind == 'accepted_cancel_requested':
+                self.get_logger().warning(
+                    '超时后的导航目标已被接受，已立即请求取消该目标'
+                )
+            elif event.kind == 'cancel_request_failed':
+                self.get_logger().error(
+                    f'超时目标的取消请求创建失败: {event.detail}'
+                )
+            elif event.kind == 'cancel_acknowledged':
+                self.get_logger().info('超时目标的取消请求已确认')
+                if event.handle is self.goal_handle:
+                    self._clear_navigation()
+            elif event.kind == 'cancel_rejected':
+                self.get_logger().error('超时目标的取消请求未被接受')
+            elif event.kind == 'cancel_failed':
+                self.get_logger().error(
+                    f'超时目标的取消响应失败: {event.detail}'
+                )
+
+    def _spin_once_with_late_cleanup(self, timeout: float) -> None:
+        rclpy.spin_once(self, timeout_sec=timeout)
+        self._service_late_goals()
+
     def _wait_for_future(
         self,
         future,
@@ -95,9 +131,8 @@ class AgvCommander(BasicNavigator):
             remaining = deadline - time.monotonic()
             if remaining <= 0.0:
                 break
-            rclpy.spin_once(
-                self,
-                timeout_sec=min(FUTURE_POLL_PERIOD, remaining),
+            self._spin_once_with_late_cleanup(
+                min(FUTURE_POLL_PERIOD, remaining)
             )
             if allow_recovery:
                 recovery_started = (
@@ -119,6 +154,11 @@ class AgvCommander(BasicNavigator):
         if self.result_future.done():
             self._clear_navigation()
             return True, False
+        if self._late_goals.has_cancel_for(self.goal_handle):
+            self.get_logger().warning(
+                '当前导航目标的取消响应仍在等待'
+            )
+            return False, False
 
         try:
             cancel_future = self.goal_handle.cancel_goal_async()
@@ -130,10 +170,11 @@ class AgvCommander(BasicNavigator):
             cancel_future, CANCEL_RESPONSE_TIMEOUT
         )
         if not response_ready:
-            abandoned = cancel_future.cancel()
+            self._late_goals.retain_cancel(
+                self.goal_handle, cancel_future
+            )
             self.get_logger().error(
-                '导航取消响应超时；'
-                f'本地取消等待已放弃: {abandoned}'
+                '导航取消响应超时；已保留该目标的取消 future 继续清理'
             )
             return False, recovery_started
 
@@ -159,7 +200,7 @@ class AgvCommander(BasicNavigator):
             recovery_started = (
                 self._begin_recovery_if_needed() or recovery_started
             )
-            time.sleep(min(0.05, remaining))
+            self._spin_once_with_late_cleanup(min(0.05, remaining))
         return recovery_started
 
     def _retry_after_error(self) -> str:
@@ -180,6 +221,7 @@ class AgvCommander(BasicNavigator):
                 timeout_sec=min(FUTURE_POLL_PERIOD, remaining)
             ):
                 break
+            self._spin_once_with_late_cleanup(0.0)
             if work_goal:
                 if self._begin_recovery_if_needed():
                     return 'low_battery'
@@ -209,14 +251,16 @@ class AgvCommander(BasicNavigator):
             allow_recovery=work_goal,
         )
         if not response_ready:
-            abandoned = send_future.cancel()
-            self.get_logger().error(
-                '导航目标响应超时；'
-                f'本地目标等待已放弃: {abandoned}'
-            )
-            if recovery_started:
-                return 'low_battery'
-            return self._retry_after_error()
+            if send_future.done():
+                response_ready = True
+            else:
+                self._late_goals.retain_response(send_future)
+                self.get_logger().error(
+                    '导航目标响应超时；已保留 future 等待并清理迟到响应'
+                )
+                if recovery_started:
+                    return 'low_battery'
+                return self._retry_after_error()
 
         try:
             goal_handle = send_future.result()
@@ -277,7 +321,7 @@ class AgvCommander(BasicNavigator):
             and self.result_future is not None
             and not self.result_future.done()
         ):
-            rclpy.spin_once(self, timeout_sec=0.05)
+            self._spin_once_with_late_cleanup(0.05)
             if self._begin_recovery_if_needed():
                 self.get_logger().warning(
                     f'电量 {self._battery_level:.1f}%：取消当前任务并返航充电'
@@ -335,8 +379,9 @@ class AgvCommander(BasicNavigator):
 
     def _request_recharge(self) -> bool:
         while rclpy.ok() and not self._recharge_client.wait_for_service(
-            timeout_sec=1.0
+            timeout_sec=FUTURE_POLL_PERIOD
         ):
+            self._spin_once_with_late_cleanup(0.0)
             self._update_battery()
             self.get_logger().warning('/recharge 服务不可用，继续等待')
 
@@ -347,10 +392,9 @@ class AgvCommander(BasicNavigator):
         future = self._recharge_client.call_async(Trigger.Request())
         response_ready, _ = self._wait_for_future(future, RECHARGE_RESPONSE_TIMEOUT)
         if not response_ready:
-            abandoned = future.cancel()
+            future.cancel()
             self.get_logger().error(
-                '充电服务响应超时；'
-                f'本地服务等待已放弃: {abandoned}'
+                '充电服务响应超时；本地服务等待已取消'
             )
             self._pause_with_battery(RETRY_DELAY)
             return False
@@ -375,6 +419,37 @@ class AgvCommander(BasicNavigator):
             f'充电完成，恢复被中断目标: {resumed_target}'
         )
         return True
+
+    def _drain_late_goals(self, timeout: float) -> None:
+        deadline = time.monotonic() + timeout
+        self._service_late_goals()
+        for event in self._late_goals.retry_unresolved():
+            if event.kind == 'cancel_retry_requested':
+                self.get_logger().warning(
+                    '关闭前已再次请求取消未解决的迟到目标'
+                )
+            else:
+                self.get_logger().error(
+                    f'关闭前重试迟到目标取消失败: {event.detail}'
+                )
+        while rclpy.ok() and self._late_goals.has_pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                break
+            self._spin_once_with_late_cleanup(
+                min(FUTURE_POLL_PERIOD, remaining)
+            )
+            self._update_battery()
+        if (
+            self._late_goals.has_pending
+            or self._late_goals.unresolved_handle_count
+        ):
+            self.get_logger().error(
+                '关闭前仍有未完成的迟到目标清理: '
+                f'响应 {self._late_goals.pending_response_count}, '
+                f'取消 {self._late_goals.pending_cancel_count}, '
+                f'未解决句柄 {self._late_goals.unresolved_handle_count}'
+            )
 
     def run(self) -> None:
         """Wait for Nav2 and run the AGV state loop until shutdown."""
@@ -409,6 +484,7 @@ def main(args=None) -> None:
         commander.get_logger().info('收到停止请求')
     finally:
         commander._cancel_navigation()
+        commander._drain_late_goals(SHUTDOWN_DRAIN_TIMEOUT)
         commander.destroy_node()
         rclpy.shutdown()
 
