@@ -42,6 +42,12 @@ def test_commander_interrupts_recharges_and_resumes_saved_work():
     assert 'self._battery_level = 100.0' in source
 
 
+def test_commander_preserves_return_to_charge_battery_reserve():
+    source = SOURCE.read_text(encoding='utf-8')
+    assert 'battery_level_after_elapsed(' in source
+    assert 'recovering=self._workflow.recovering' in source
+
+
 def test_retry_pause_surfaces_low_battery_recovery_before_resubmission():
     source = SOURCE.read_text(encoding='utf-8')
     navigate = source[

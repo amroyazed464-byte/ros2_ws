@@ -5,7 +5,7 @@ import time
 from geometry_msgs.msg import PoseStamped
 from my_py_pkg.agv_logic import (
     AgvWorkflow,
-    deplete_battery,
+    battery_level_after_elapsed,
     distance_to_target,
     DROPOFF,
     latch_recovery_for_battery,
@@ -68,8 +68,10 @@ class AgvCommander(BasicNavigator):
 
     def _update_battery(self) -> bool:
         now = time.monotonic()
-        self._battery_level = deplete_battery(
-            self._battery_level, now - self._battery_updated_at
+        self._battery_level = battery_level_after_elapsed(
+            self._battery_level,
+            now - self._battery_updated_at,
+            recovering=self._workflow.recovering,
         )
         self._battery_updated_at = now
         if now - self._battery_published_at >= BATTERY_PUBLISH_PERIOD:

@@ -22,6 +22,23 @@ def deplete_battery(
     return max(0.0, min(100.0, level - elapsed_seconds * rate_per_second))
 
 
+def battery_level_after_elapsed(
+    level: float,
+    elapsed_seconds: float,
+    recovering: bool,
+    rate_per_second: float = 0.5,
+) -> float:
+    """Reserve the remaining battery while returning to the charger."""
+    depleted_level = deplete_battery(
+        level,
+        elapsed_seconds,
+        rate_per_second,
+    )
+    if recovering:
+        return max(0.0, min(100.0, level))
+    return depleted_level
+
+
 def should_interrupt_for_charge(
     level: float,
     recovering: bool,

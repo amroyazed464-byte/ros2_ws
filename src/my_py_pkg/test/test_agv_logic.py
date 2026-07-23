@@ -26,6 +26,14 @@ def test_battery_depletion_rejects_invalid_inputs():
         deplete_battery(50.0, 1.0, 0.0)
 
 
+def test_recovery_reserves_remaining_battery_for_trip_to_charger():
+    assert agv_logic.battery_level_after_elapsed(
+        20.0,
+        120.0,
+        recovering=True,
+    ) == 20.0
+
+
 def test_low_battery_interrupts_only_outside_recovery():
     assert should_interrupt_for_charge(20.0, False) is True
     assert should_interrupt_for_charge(19.5, False) is True
