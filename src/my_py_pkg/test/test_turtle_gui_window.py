@@ -3,9 +3,8 @@
 import os
 import time
 
-os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-
 from geometry_msgs.msg import Twist
+from my_py_pkg.turtle_gui import TurtleControlWindow, TurtleGuiNode
 from PyQt5.QtCore import Qt
 from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication, QPushButton
@@ -14,12 +13,11 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
-from my_py_pkg.turtle_gui import TurtleControlWindow, TurtleGuiNode
-
 
 @pytest.fixture(scope='module')
 def app():
     """Provide the single QApplication allowed by Qt."""
+    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
     return QApplication.instance() or QApplication([])
 
 

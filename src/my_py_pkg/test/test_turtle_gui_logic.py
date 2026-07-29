@@ -1,8 +1,7 @@
 """Tests for turtlesim GUI command mapping."""
 
-import pytest
-
 from my_py_pkg.turtle_gui_logic import velocity_for
+import pytest
 
 
 @pytest.mark.parametrize(

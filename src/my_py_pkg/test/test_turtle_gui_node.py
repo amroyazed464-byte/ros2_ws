@@ -3,11 +3,10 @@
 import time
 
 from geometry_msgs.msg import Twist
+from my_py_pkg.turtle_gui import TurtleGuiNode
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
-
-from my_py_pkg.turtle_gui import TurtleGuiNode
 
 
 def test_node_publishes_forward_twist_and_detects_subscriber():
