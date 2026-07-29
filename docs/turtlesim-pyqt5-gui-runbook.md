@@ -95,9 +95,10 @@ ros2 topic echo /turtle1/cmd_vel
 ## 自动化测试
 
 ```bash
-cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
-QT_QPA_PLATFORM=offscreen python3 -m pytest src/my_py_pkg/test -q
+cd ~/ros2_ws/src/my_py_pkg
+QT_QPA_PLATFORM=offscreen python3 -m pytest test -q
+cd ~/ros2_ws
 colcon test --packages-select my_py_pkg --event-handlers console_direct+
 colcon test-result --verbose
 ```
