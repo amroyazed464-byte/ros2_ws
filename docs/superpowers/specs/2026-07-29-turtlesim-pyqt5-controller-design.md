@@ -2,8 +2,8 @@
 
 ## 1. 目标
 
-在 Ubuntu 24.04 LTS、ROS 2 Jazzy 和 PyQt5 环境中，实现一个独立的
-ROS2 Python 包 `turtle_gui_controller`。程序提供图形遥控面板，通过
+在 Ubuntu 24.04 LTS、ROS 2 Jazzy 和 PyQt5 环境中，扩展现有 ROS2
+Python 包 `my_py_pkg`。新增程序提供图形遥控面板，通过
 `geometry_msgs/msg/Twist` 消息向 `/turtle1/cmd_vel` 发布速度指令，
 控制 Turtlesim 中 `turtle1` 前进、后退、左转、右转和停止。
 
@@ -32,24 +32,21 @@ ROS2 Python 包 `turtle_gui_controller`。程序提供图形遥控面板，通�
 
 ## 3. 包结构
 
-新包放在 `src/turtle_gui_controller/`，与现有 `my_py_pkg` 隔离，避免
-影响虚拟机工作区中的未提交改动。
+新功能放在现有 `src/my_py_pkg/` 包中。虚拟机中已有的 `led_bridge.py`、
+`config/burger_fast.yaml` 和 `setup.py` 修改先单独提交，再从功能分支
+实现本作业，避免把两项工作混在同一个提交中。
 
 ```text
-src/turtle_gui_controller/
+src/my_py_pkg/
 ├── launch/
 │   └── turtle_gui.launch.py
-├── resource/
-│   └── turtle_gui_controller
 ├── test/
-│   ├── test_command_logic.py
-│   └── test_package_registration.py
-├── turtle_gui_controller/
-│   ├── __init__.py
-│   ├── command_logic.py
-│   └── gui_node.py
+│   ├── test_turtle_gui_logic.py
+│   └── test_turtle_gui_registration.py
+├── my_py_pkg/
+│   ├── turtle_gui_logic.py
+│   └── turtle_gui.py
 ├── package.xml
-├── setup.cfg
 └── setup.py
 ```
 
@@ -61,11 +58,13 @@ src/turtle_gui_controller/
 
 组件职责如下：
 
-- `command_logic.py`：将动作名称映射为线速度与角速度，不依赖 PyQt5
+- `turtle_gui_logic.py`：将动作名称映射为线速度与角速度，不依赖 PyQt5
   或 ROS2，可独立测试。
-- `gui_node.py`：创建 ROS2 节点、发布者和 PyQt5 窗口，处理按钮、
+- `turtle_gui.py`：创建 ROS2 节点、发布者和 PyQt5 窗口，处理按钮、
   键盘、状态刷新与安全退出。
 - `turtle_gui.launch.py`：同时启动 `turtlesim_node` 与 GUI 节点。
+- `setup.py`：注册 `turtle_gui` 控制台入口并安装 Launch 文件。
+- `package.xml`：声明 PyQt5 运行时依赖。
 
 ROS2 接口：
 
@@ -107,14 +106,14 @@ GUI 定期使用 ROS2 图信息检查 `/turtle1/cmd_vel` 的订阅者数量：
 
 1. 用户点击按钮或按下快捷键。
 2. GUI 将输入转换为动作名称。
-3. `command_logic` 返回对应的线速度与角速度。
+3. `turtle_gui_logic` 返回对应的线速度与角速度。
 4. ROS2 节点创建 `Twist` 消息并立即发布。
 5. Turtlesim 订阅 `/turtle1/cmd_vel` 并更新海龟运动。
 6. GUI 同步刷新当前动作与速度显示。
 
 ## 7. 错误处理与退出
 
-- 未知动作由 `command_logic` 明确拒绝并抛出 `ValueError`。
+- 未知动作由 `turtle_gui_logic` 明确拒绝并抛出 `ValueError`。
 - GUI 只绑定已定义动作，异常会通过 ROS2 日志记录。
 - Turtlesim 未启动时 GUI 保持运行并显示等待状态。
 - 窗口关闭时先尝试发布全零 `Twist`，再停止计时器、销毁节点并关闭
@@ -132,17 +131,29 @@ GUI 定期使用 ROS2 图信息检查 `/turtle1/cmd_vel` 的订阅者数量：
 
 Ubuntu 验证包括：
 
-1. 使用 `colcon build --packages-select turtle_gui_controller
+1. 使用 `colcon build --packages-select my_py_pkg
    --symlink-install` 构建成功。
 2. 包测试无失败。
-3. `ros2 launch turtle_gui_controller turtle_gui.launch.py` 能同时打开
+3. `ros2 launch my_py_pkg turtle_gui.launch.py` 能同时打开
    Turtlesim 与 PyQt5 窗口。
 4. 五个按钮发布正确速度，海龟按预期运动。
 5. 方向键和空格键行为与按钮一致。
 6. 关闭 GUI 后 `/turtle1/cmd_vel` 收到停止指令。
-7. 未修改或覆盖虚拟机中原有的未提交源代码。
+7. 虚拟机中原有的未提交源代码已在独立提交中完整保留。
 
-## 9. 演示视频
+## 9. 版本控制与交付
+
+版本控制按以下顺序进行：
+
+1. 在虚拟机 `main` 分支单独提交已有的源代码与配置改动，不提交
+   `build/`、`install/` 或 `log/` 自动生成内容。
+2. 同步 Windows 与虚拟机仓库后，新建功能分支
+   `feature/turtlesim-pyqt5-gui`。
+3. 在功能分支完成测试、实现、说明文档与 Ubuntu 验证，并提交代码。
+4. 将功能分支合并回 `main`，重新运行关键验证。
+5. 将 `main` 推送到 GitHub `origin`。
+
+## 10. 演示视频
 
 录制前将两个窗口并排摆放，确保按钮文字和海龟均清晰可见。建议按
 “前进 → 左转 → 前进 → 右转 → 后退 → 停止”的顺序演示，并在最后
