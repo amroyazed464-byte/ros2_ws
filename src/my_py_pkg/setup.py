@@ -1,3 +1,6 @@
+from glob import glob
+import os
+
 from setuptools import find_packages, setup
 
 package_name = 'my_py_pkg'
@@ -10,6 +13,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'),
+            glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -34,6 +39,7 @@ setup(
             'led_bridge = my_py_pkg.led_bridge:main',
             'led_panel = my_py_pkg.led_panel:main',
             'turtle_controller = my_py_pkg.turtle_controller:main',
+            'turtle_gui = my_py_pkg.turtle_gui:main',
             'agv_commander = my_py_pkg.agv_commander:main',
             'charging_station = my_py_pkg.charging_station:main',
         ],
