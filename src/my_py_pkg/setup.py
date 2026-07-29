@@ -31,6 +31,7 @@ setup(
             'set_side_length = my_py_pkg.set_side_length:main',
             'turtle_summoner = my_py_pkg.turtle_summoner:main',
             'battery = my_py_pkg.battery:main',
+            'led_bridge = my_py_pkg.led_bridge:main',
             'led_panel = my_py_pkg.led_panel:main',
             'turtle_controller = my_py_pkg.turtle_controller:main',
             'agv_commander = my_py_pkg.agv_commander:main',
